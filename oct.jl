@@ -53,6 +53,6 @@ model = Model(Gurobi.Optimizer)
 @constraint(model,[t=tree.branches],sum(a[:,t]) = d[t])
 @constraint(model,[t=tree.branches],0≤b[t]≤d[t])
 #TODO _______
-@constraint(#parent node ...)
+@constraint(model,[t=tree.branches[2:end],p=get_parent(t)],d[t] <= d[p])
 
 C = sum(d[t] for t in tree.branches)
