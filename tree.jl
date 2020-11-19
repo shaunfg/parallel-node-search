@@ -1,4 +1,4 @@
-module tree_functions
+module tf
     struct Tree
         nodes
         branches

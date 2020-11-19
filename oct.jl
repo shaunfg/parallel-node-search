@@ -24,7 +24,7 @@ K = 1 # number of labels k
 p = 1 # number of rows of observed x
 N_min = 1
 
-tree = get_tree(1)
+tree = tf.get_tree(1)
 model = Model(Gurobi.Optimizer)
 
 @variable(model,z[1:n,tree.leaves],Bin)
@@ -53,6 +53,6 @@ model = Model(Gurobi.Optimizer)
 @constraint(model,[t=tree.branches],sum(a[:,t]) = d[t])
 @constraint(model,[t=tree.branches],0≤b[t]≤d[t])
 #TODO _______
-@constraint(model,[t=tree.branches[2:end],p=get_parent(t)],d[t] <= d[p])
+@constraint(model,[t=tree.branches[2:end],p=tf.get_parent(t)],d[t] <= d[p])
 
 C = sum(d[t] for t in tree.branches)
