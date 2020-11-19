@@ -1,4 +1,5 @@
 include("./tree.jl")
+import .tree
 using JuMP, Gurobi
 
 #----
@@ -18,6 +19,9 @@ function y_mat(y)
     end
     return(Y)
 end
+
+tf.get_parent()
+tf.get_tree()
 #----
 n = 1 #
 K = 1 # number of labels k
