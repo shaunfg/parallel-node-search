@@ -1,4 +1,5 @@
 include("./tree.jl")
+import .tree
 using JuMP, Gurobi
 
 #----
@@ -18,6 +19,11 @@ function y_mat(y)
     end
     return(Y)
 end
+
+Y = y_mat(y)
+
+tf.get_parent()
+tf.get_tree()
 #----
 n = 1 #
 K = 1 # number of labels k
@@ -40,7 +46,7 @@ model = Model(Gurobi.Optimizer)
 @constraint(model,[t=tree.leaves],Lₜ[t] ≥ 0)
 
 #TODO _______
-@constraint(model,[t=tree.leaves,k=1:K],Nkt[k,t] = sum(z[i,t])) # for i:y_i=k
+@constraint(model,[t=tree.leaves,k=1:K],Nkt[k,t] = sum(Y[i,k]*z[i,t] for i=1:n))
 
 @constraint(model,[t=tree.leaves],Nt[t] = sum(z[:,t]))
 @constraint(model,[t=tree.leaves],sum(c[:,t]) = l[t])
