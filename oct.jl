@@ -6,6 +6,18 @@ using JuMP, Gurobi
 Nₖₜ: # of label k in node t
 
 """
+
+function y_mat(y)
+    n = length(y)
+    y_class = int(categorical(y),type=Int)
+    Y = zeros(n,k)
+    for i in 1:n, k in y_class
+        if y_class[i] == k
+            Y[i,k] = 1
+        end
+    end
+    return(Y)
+end
 #----
 n = 1 #
 K = 1 # number of labels k

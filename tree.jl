@@ -10,6 +10,7 @@ module tree_functions
 
     get_left(node) = 2*node
     get_right(node) =  2*node + 1
+    get_parent(node) = Int(floor(node/2))
 
     function get_tree(depth::Int)
         nodes = collect(1:N_nodes(depth))
