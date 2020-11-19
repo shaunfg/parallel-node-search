@@ -1,3 +1,7 @@
+"""
+Functions and stucture needed to describe a tree, this is used to create
+an object to supplement the optimal classification tree.
+"""
 module tf
     struct Tree
         nodes
@@ -18,12 +22,4 @@ module tf
         leaves = collect(N_branch(depth)+1:N_nodes(depth))
         return Tree(nodes,branches,leaves)
     end
-end  # module tree_functions
-
-
-#------
-# tree = get_tree(1)
-# tree.leaves
-# get_left(1)
-# get_right(1)
-# get_tree(2)
+end  
