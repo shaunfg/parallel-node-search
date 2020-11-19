@@ -39,14 +39,14 @@ model = Model(Gurobi.Optimizer)
 @variable(model,b[tree.branches],Bin)
 
 
-@constraint(model,[t=tree.leaves,k=1:K],Lₜ[t] ≥ Nₜ[t] - Nₖₜ[k,t] - n*(1-cₖₜ[k,t]))
-@constraint(model,[t=tree.leaves,k=1:K],Lₜ[t] ≤ Nₜ[t] - Nₖₜ[k,t] + n*cₖₜ[k,t])
+@constraint(model,[t=tree.leaves,k=1:K],Lt[t] ≥ Nt[t] - Nkt[k,t] - n*(1-c[k,t]))
+@constraint(model,[t=tree.leaves,k=1:K],Lt[t] ≤ Nt[t] - Nkt[k,t] + n*c[k,t])
 @constraint(model,[t=tree.leaves],Lₜ[t] ≥ 0)
 
 #TODO _______
-@constraint(model,[t=tree.leaves,k=1:K],Nₖₜ[k,t] = sum(z[i,t])) # for i:y_i=k
+@constraint(model,[t=tree.leaves,k=1:K],Nkt[k,t] = sum(z[i,t])) # for i:y_i=k
 
-@constraint(model,[t=tree.leaves],Nₜ[t] = sum(z[:,t]))
+@constraint(model,[t=tree.leaves],Nt[t] = sum(z[:,t]))
 @constraint(model,[t=tree.leaves],sum(c[:,t]) = l[t])
 #TODO _______
 @constraint(model,[i=1:n,t=tree.leaves,m]
