@@ -16,10 +16,33 @@ module tf
     get_right(node) =  2*node + 1
     get_parent(node) = Int(floor(node/2))
 
+    function get_right_ancestors(node::Int)
+        right_ancestors = []
+        if node==1
+            return()
+        elseif (node-1)/2==get_parent(node)
+            append!(right_ancestors,get_parent(node))
+            append!(right_ancestors,get_right_ancestors(get_parent(node)))
+        end
+        return(right_ancestors)
+    end
+
+    function get_left_ancestors(node::Int)
+        left_ancestors = []
+        if node==1
+            return()
+        elseif node/2==get_parent(node)
+            append!(left_ancestors,get_parent(node))
+            append!(left_ancestors,get_left_ancestors(get_parent(node)))
+        end
+        return(left_ancestors)
+    end
+
+
     function get_tree(depth::Int)
         nodes = collect(1:N_nodes(depth))
         branches = collect(1:N_branch(depth))
         leaves = collect(N_branch(depth)+1:N_nodes(depth))
         return Tree(nodes,branches,leaves)
     end
-end  
+end
