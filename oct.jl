@@ -22,15 +22,15 @@ end
 
 Y = y_mat(y)
 
-tf.get_parent()
-tf.get_tree()
+tf.get_parent(3)
+tf.get_tree(2)
 #----
 n = 1 #
 K = 1 # number of labels k
 p = 1 # number of rows of observed x
 N_min = 1
 
-tree = tf.get_tree(1)
+tree = tf.get_tree(4)
 model = Model(Gurobi.Optimizer)
 
 @variable(model,z[1:n,tree.leaves],Bin)
@@ -51,7 +51,8 @@ model = Model(Gurobi.Optimizer)
 @constraint(model,[t=tree.leaves],Nt[t] = sum(z[:,t]))
 @constraint(model,[t=tree.leaves],sum(c[:,t]) = l[t])
 #TODO _______
-@constraint(model,[i=1:n,t=tree.leaves,m]
+@constraint(model,[i=1:n,t=tree.leaves,m=tf.get_right_ancestors(t)],a[:,m]'*x[i] >= b[m] - (1-z[i,t])
+@constraint(model,[i=1:n,t=tree.leaves,m=tf.get_left_ancestors(t)],a[:,m]'*(x[i]+ϵ) <= b[m] + (1+ϵmax)(1-z[i,t])
 
 @constraint(model,[i=1:n],sum(z[i,:]) = 1)
 @constraint(model,[i=1:n,t=tree.leaves],z[i,t] ≤ l[t])
