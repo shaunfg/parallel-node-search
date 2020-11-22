@@ -2,6 +2,7 @@
 Functions and stucture needed to describe a tree, this is used to create
 an object to supplement the optimal classification tree.
 """
+
 module tf
     struct Tree
         nodes
@@ -16,28 +17,43 @@ module tf
     get_right(node) =  2*node + 1
     get_parent(node) = Int(floor(node/2))
 
-    function get_right_ancestors(node::Int)
+    function R(node::Int)
+        # Get Right ancestors
         right_ancestors = []
         if node==1
             return()
         elseif (node-1)/2==get_parent(node)
             append!(right_ancestors,get_parent(node))
-            append!(right_ancestors,get_right_ancestors(get_parent(node)))
+            append!(right_ancestors,R(get_parent(node)))
         end
         return(right_ancestors)
     end
 
-    function get_left_ancestors(node::Int)
+    function L(node::Int)
+        # Get left ancestors
         left_ancestors = []
         if node==1
             return()
         elseif node/2==get_parent(node)
             append!(left_ancestors,get_parent(node))
-            append!(left_ancestors,get_left_ancestors(get_parent(node)))
+            append!(left_ancestors,L(get_parent(node)))
         end
         return(left_ancestors)
     end
+    import MLJBase.int
+    using CategoricalArrays
 
+    function y_mat(y)
+        n = length(y)
+        y_class = int(categorical(y),type=Int)
+        Y = zeros(n,length(unique(y_class)))
+        for i in 1:n, k in y_class
+            if y_class[i] == k
+                Y[i,k] = 1
+            end
+        end
+        return(Y)
+    end
 
     function get_tree(depth::Int)
         nodes = collect(1:N_nodes(depth))
