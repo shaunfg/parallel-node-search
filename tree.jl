@@ -63,3 +63,15 @@ module tf
         return Tree(nodes,branches,leaves)
     end
 end
+
+
+Y = tf.tf.y_mat(["c1","c2","c1","c3"])
+temp = tf.tf.get_tree(2)
+temp.leaves
+z = [1 0 0 0; 0 0 0 1; 0 0 1 0; 0 1 0 0]
+
+function assign_class(leaf_node::Int, Y::Matrix, z::Matrix)
+    n = size(Y)[1]
+    K = size(Y)[2]
+
+end
