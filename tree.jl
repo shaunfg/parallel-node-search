@@ -40,6 +40,7 @@ module tf
         end
         return(left_ancestors)
     end
+
     import MLJBase.int
     using CategoricalArrays
 

@@ -60,3 +60,5 @@ optimize!(model)
 value.(a)
 value.(b)
 zs = value.(z)
+
+zs
