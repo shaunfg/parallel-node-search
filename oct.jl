@@ -18,13 +18,14 @@ n = size(x,1) #
 K = length(unique(y)) # number of labels k
 p = size(x,2) # number of features
 N_min = 5
-depth = 2
+depth = 3
 
 ϵ = [minimum(abs.([x[i+1,j]-x[i,j] for i=1:size(x,1)-1 if x[i+1,j]!=x[i,j]]))
     for j=1:size(x,2)]
-ϵ = 0.1
-ϵmax = 0.1
-α = 0.0001
+# ϵ = 0.1
+# ϵmax = 0.1
+ϵ = 1e-4
+α = 0
 
 tree = tf.get_tree(depth)
 model = Model(Gurobi.Optimizer)
