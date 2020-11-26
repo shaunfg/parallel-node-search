@@ -4,21 +4,21 @@ using JuMP, Gurobi, CSV,Random
 
 #------
 iris_full = CSV.read("iris.csv")
-iris = iris_full[randperm(size(iris_full,1)),:]#[1:10,:]
+iris = iris_full[randperm(size(iris_full,1)),:]#[1:3,:]
 x = Matrix(iris[:,1:4])
 y = Vector(iris[:,5])
 
 #----
-heart = CSV.read("heart.csv")
-# iris = iris_full[randperm(size(iris_full,1)),:]#[1:10,:]
-x = Matrix(heart[:,1:end-1])
-y = Vector(heart[:,end])
+# heart = CSV.read("heart.csv")
+# # iris = iris_full[randperm(size(iris_full,1)),:]#[1:10,:]
+# x = Matrix(heart[:,1:end-1])
+# y = Vector(heart[:,end])
 #----
 n = size(x,1) #
 K = length(unique(y)) # number of labels k
 p = size(x,2) # number of features
 N_min = 5
-depth = 3
+depth = 2
 
 ϵ = [minimum(abs.([x[i+1,j]-x[i,j] for i=1:size(x,1)-1 if x[i+1,j]!=x[i,j]]))
     for j=1:size(x,2)]
@@ -34,34 +34,59 @@ model = Model(Gurobi.Optimizer)
 @variable(model,c[1:K,tree.leaves],Bin)
 @variable(model,a[1:p,tree.branches],Bin)
 @variable(model,d[tree.branches],Bin) #
-@variable(model,b[tree.branches])
+
+@variable(model,Nt[tree.leaves]≥ 0)
+@variable(model,Nkt[1:K,tree.leaves]≥ 0)
 @variable(model,Lt[tree.leaves]≥ 0)
+@variable(model,b[tree.branches]≥ 0)
 
-@variable(model,C)
-@variable(model,Nt[tree.leaves])
-@variable(model,Nkt[1:K,tree.leaves])
+# integer_relationship_constraints
+@constraint(model,[t=tree.leaves],sum(c[:,t]) == l[t]) # OK
+@constraint(model,[i=1:n,t=tree.leaves],z[i,t] ≤ l[t])
+@constraint(model,[i=1:n],sum(z[i,:]) == 1)
+@constraint(model,[t=tree.leaves],sum(z[:,t]) ≥ N_min*l[t])
+@constraint(model,[t=tree.branches],sum(a[:,t]) == d[t])
+@constraint(model,[t=tree.branches[2:end],p=tf.get_parent(t)],d[t] <= d[p])
 
+# leaf_samples_constraints
+@constraint(model,[t=tree.leaves], Nt[t] == sum(z[:,t])) #
+@constraint(model,[k=1:K,t=tree.leaves],Nkt[k,t] == sum(z[i,t]*(1 + tf.y_mat(y)[i,k])/2 for i=1:n))
+
+# leaf_error_constraints
 @constraint(model,[t=tree.leaves,k=1:K],Lt[t] ≥ Nt[t] - Nkt[k,t] - n*(1-c[k,t]))
 @constraint(model,[t=tree.leaves,k=1:K],Lt[t] ≤ Nt[t] - Nkt[k,t] + n*c[k,t])
 
-@constraint(model,[k=1:K,t=tree.leaves],Nkt[k,t] == sum(tf.y_mat(y)[i,k]*z[i,t] for i=1:n))
-@constraint(model,[t=tree.leaves], Nt[t] == sum(z[:,t]))
-@constraint(model,[t=tree.leaves],sum(c[:,t]) == l[t])
-@constraint(model,C == sum(d))
-
-@constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)], a[:,m]'*x[i,:] ≥ b[m]-(1+ϵmax)*(1-z[i,t]))
-@constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)], a[:,m]'*x[i,:].+ϵ <= b[m] + (1+ϵmax)*(1-z[i,t]))
-
-@constraint(model,[i=1:n],sum(z[i,:]) == 1)
-@constraint(model,[i=1:n,t=tree.leaves],z[i,t] ≤ l[t])
-@constraint(model,[t=tree.leaves],sum(z[:,t]) ≥ N_min*l[t])
-@constraint(model,[t=tree.branches],sum(a[:,t]) == d[t])
+# parent_branching_constraints
 @constraint(model,[t=tree.branches],b[t]≤d[t])
-@constraint(model,[t=tree.branches],b[t]≥0)
-@constraint(model,[t=tree.branches[2:end],p=tf.get_parent(t)],d[t] <= d[p])
+
+# @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)], a[:,m]'*x[i,:] ≥ b[m]-(1+ϵmax)*(1-z[i,t]))
+# @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)], a[:,m]'*x[i,:].+ϵ <= b[m] + (1+ϵmax)*(1-z[i,t]))
+
+M = 10
+@constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)],
+            sum(a[j,m]*x[i,j] for j=1:p) ≥ b[m]-(1-z[i,t])*M)
+@constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)],
+            sum(a[j,m]*x[i,j] for j=1:p)+ϵ ≤ b[m] + (M+ϵ)*(1-z[i,t]))
+
+
+
+# count = 0
+# values = []
+# for i=1:n
+#     for t in tree.leaves
+#         for m in tf.R(t)
+#             println([m])
+#             # println([i,t,m])
+#             append!(values,[[i,t,m]])
+#             global count +=1
+#         end
+#     end
+# end
+# values
+# count
 
 L_baseline = 100
-@objective(model, Min, 1/L_baseline * sum(Lt) + α*C)
+@objective(model, Min, 1/L_baseline * sum(Lt) + α*sum(d))
 
 optimize!(model)
 getobjectivevalue(model)
@@ -74,6 +99,5 @@ value.(d)
 value.(c)
 value.(l)
 value.(z)
-zs = value.(z.data)
 
 zs[:,7]
