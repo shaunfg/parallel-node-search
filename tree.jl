@@ -25,6 +25,8 @@ module tf
         elseif (node-1)/2==get_parent(node)
             append!(right_ancestors,get_parent(node))
             append!(right_ancestors,R(get_parent(node)))
+        else
+            append!(right_ancestors,R(get_parent(node)))
         end
         return(right_ancestors)
     end
@@ -36,6 +38,8 @@ module tf
             return()
         elseif node/2==get_parent(node)
             append!(left_ancestors,get_parent(node))
+            append!(left_ancestors,L(get_parent(node)))
+        else
             append!(left_ancestors,L(get_parent(node)))
         end
         return(left_ancestors)
