@@ -1,9 +1,12 @@
 include("./tree.jl")
 # import .tree
-using JuMP, Gurobi, CSV,Random
+using JuMP, Gurobi, CSV,Random, DataFrames, StatsBase
 
+#
+#cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
 #------
-iris_full = CSV.read("iris.csv")
+#Read in the dataset
+iris_full = CSV.read("iris.csv",DataFrame)
 iris = iris_full[randperm(size(iris_full,1)),:]#[1:3,:]
 x = Matrix(iris[:,1:4])
 y = Vector(iris[:,5])
@@ -13,23 +16,75 @@ y = Vector(iris[:,5])
 # # iris = iris_full[randperm(size(iris_full,1)),:]#[1:10,:]
 # x = Matrix(heart[:,1:end-1])
 # y = Vector(heart[:,end])
+
 #----
-n = size(x,1) #
+#Data pre-processing
+dt = fit(UnitRangeTransform, x, dims=1)
+x_copy = x
+x = StatsBase.transform(dt,x)
+#----
+n = size(x,1) # number of observations
 p = size(x,2) # number of features
 K = length(unique(y)) # number of labels k
 N_min = 5
 depth = 2
 α = 0.1
 
-ϵs = [minimum(abs.([x[i+1,j]-x[i,j] for i=1:size(x,1)-1 if x[i+1,j]!=x[i,j]]))
-    for j=1:size(x,2)]
+#----
+#Find the smallest difference between X's across all features
+# function epsilon(x)
+#     ϵj = []
+#     for j in 1:p
+#         min_diff = 1
+#         diff = 0
+#         for i in 1:n-1
+#             for ii in 2:n
+#                 diff = abs(x[ii,j] - x[i,j])
+#                 if (diff < min_diff) & (diff!= 0)
+#                     min_diff = diff
+#                     println(diff)
+#                 end
+#             end
+#         end
+#         append!(ϵj,min_diff)
+#     end
+#     return(ϵj)
+# end
+
+function epsilon(x)
+    ϵj = []
+    n = size(x,1)
+    for j in 1:p
+        min_diff = 1
+        diff = 0
+        x_sorted = sort(x[:,j])
+        for i in 1:n-1
+            diff = abs(x_sorted[i+1] - x_sorted[i])
+            if (diff < min_diff) & (diff!= 0)
+                println(diff)
+                min_diff = diff
+            end
+        end
+        append!(ϵj,min_diff)
+    end
+    return(ϵj)
+end
+
+ϵ = epsilon(x)-1e-4
+ϵmin = minimum(ϵ)
+ϵmax = maximum(ϵ)
+#ϵ = 1e-4
+
+# ϵs = [minimum(abs.([x[i+1,j]-x[i,j] for i=1:size(x,1)-1 if x[i+1,j]!=x[i,j]]))
+#     for j=1:size(x,2)]
 
 # ϵ = 0.1
 # ϵmax = 0.1
-ϵ = 0.09#minimum(ϵs)
+#ϵ = 0.09#minimum(ϵs)
 # ϵ = 1e-4
 
 tree = tf.get_tree(depth)
+
 model = Model(Gurobi.Optimizer)
 
 @variable(model,z[1:n,tree.leaves],Bin)
@@ -65,13 +120,19 @@ model = Model(Gurobi.Optimizer)
 # @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)], a[:,m]'*x[i,:] ≥ b[m]-(1+ϵmax)*(1-z[i,t]))
 # @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)], a[:,m]'*x[i,:].+ϵ <= b[m] + (1+ϵmax)*(1-z[i,t]))
 
-M = 10 # > maximum of x
+M = 1 # > maximum of x
+# @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)],
+#             sum(a[j,m]*x[i,j] for j=1:p) ≥ b[m]-(1-z[i,t])*M)
+# @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)],
+#          sum(a[j,m]*x[i,j] for j=1:p) + ϵmin ≤ b[m] + (M+ϵmax)*(1-z[i,t]))
+# @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)],
+#             sum(a[j,m]*x[i,j] for j=1:p) ≥ b[m]-(1-z[i,t])*M)
+# @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)],
+#             a[:,m]'*(x[i,:].+ϵ.- ϵmin) + ϵmin ≤ b[m] + (1+ϵmax)*(1-z[i,t]))
 @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)],
-            sum(a[j,m]*x[i,j] for j=1:p) ≥ b[m]-(1-z[i,t])*M)
+            a[:,m]'*x[i,:] ≥ b[m]-(1-z[i,t])*M)
 @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)],
-            sum(a[j,m]*x[i,j] for j=1:p) + ϵ ≤ b[m] + (M+ϵ)*(1-z[i,t]))
-
-
+            a[:,m]'*(x[i,:].+ϵ.-ϵmin)+ϵmin ≤ b[m] + (1+ϵmax)*(1-z[i,t]))
 
 
 L_baseline = 100
@@ -90,6 +151,11 @@ value.(l) # =1 if node leaf t contains any points
 value.(z) # points in leaf node t
 
 maximum(x)
+
+#reconstruct b
+dt = fit(UnitRangeTransform, x_copy[:,4], dims=1)
+b_scaled = StatsBase.reconstruct!(dt,value.(b))
+
 # count = 0
 # values = []
 # for i=1:n
