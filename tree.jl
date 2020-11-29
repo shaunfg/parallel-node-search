@@ -13,9 +13,20 @@ module tf
     N_nodes(D::Int) = 2^(D+1) - 1
     N_branch(D::Int) = Int(floor(N_nodes(D::Int)/2))
 
-    get_left(node) = 2*node
-    get_right(node) =  2*node + 1
+    # get_left(node) = 2*node
+    # get_right(node) =  2*node + 1
     get_parent(node) = Int(floor(node/2))
+
+    function left_child(node::Int,T::Tree)
+        if 2*node in T.nodes
+            return(2*node)
+        end
+    end
+    function right_child(node::Int,T::Tree)
+        if 2*node+1 in T.nodes
+            return(2*node+1)
+        end
+    end
 
     function R(node::Int)
         # Get Right ancestors
@@ -45,6 +56,33 @@ module tf
         return(left_ancestors)
     end
 
+    function nodes_subtree(node::Int,t::Tree)
+        # Get Subtree
+        subtree_nodes = []
+        subtree_leaves = []
+        if node in t.leaves
+            append!(subtree_nodes,node)
+            append!(subtree_leaves,node)
+        else
+            append!(subtree_nodes,node)
+            append!(subtree_nodes,nodes_subtree(left_child(node,t),t))
+            append!(subtree_nodes,nodes_subtree(right_child(node,t),t))
+        end
+        return(subtree_nodes)
+    end
+
+    function create_subtree(nodes,t::Tree)
+        leaves = []
+        branches = copy(nodes)
+        for d in nodes
+            if d in t.leaves
+                append!(leaves,d)
+                filter!(x->x≠d,branches)
+            end
+        end
+        return Tree(nodes,branches,leaves)
+    end
+
     import MLJBase.int
     using CategoricalArrays
 
@@ -66,6 +104,19 @@ module tf
         leaves = collect(N_branch(depth)+1:N_nodes(depth))
         return Tree(nodes,branches,leaves)
     end
+
+    function replace_subtree(t::Tree,subtree::Tree)
+        full_nodes = t.nodes
+        st_root = minimum(subtree.nodes)
+        #get the nodes of original subtree
+        st_nodes_i = nodes_subtree(st_root,t)
+        st_nodes_f = subtree.nodes
+        #delete nodes no longer in optimal subtree
+        #add new nodes from optimal subtree
+        #create new tree struct
+        #
+    end
+
 end
 
 
