@@ -2,12 +2,13 @@
 Functions and stucture needed to describe a tree, this is used to create
 an object to supplement the optimal classification tree.
 """
-
 module tf
     struct Tree
         nodes
         branches
         leaves
+        a
+        b
     end
 
     N_nodes(D::Int) = 2^(D+1) - 1
@@ -106,15 +107,25 @@ module tf
     end
 
     function replace_subtree(t::Tree,subtree::Tree)
-        full_nodes = t.nodes
-        st_root = minimum(subtree.nodes)
+        st_nodes_f = subtree.nodes
+        #get the root node of subtree
+        st_root = minimum(st_nodes_f)
         #get the nodes of original subtree
         st_nodes_i = nodes_subtree(st_root,t)
-        st_nodes_f = subtree.nodes
-        #delete nodes no longer in optimal subtree
-        #add new nodes from optimal subtree
+        #delete nodes no longer optimal and add new nodes from optimal subtree
+        keep_nodes = t.nodes[(.!(in(st_nodes_i).(t.nodes)))]
+        append!(keep_nodes,st_nodes_f)
         #create new tree struct
-        #
+        new_leaves = t.leaves[(.!(in(st_nodes_i).(t.leaves)))]
+        new_branches = t.branches[(.!(in(st_nodes_i).(t.branches)))]
+        for j in st_nodes_f
+            if j in subtree.leaves
+                append!(new_leaves,j)
+            else
+                append!(new_branches,j)
+            end
+        end
+        return Tree(keep_nodes,new_branches,new_leaves)
     end
 
 end
