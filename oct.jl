@@ -70,7 +70,7 @@ function epsilon(x)
     return(ϵj)
 end
 
-ϵ = epsilon(x)-1e-4
+ϵ = epsilon(x).-1e-4
 ϵmin = minimum(ϵ)
 ϵmax = maximum(ϵ)
 #ϵ = 1e-4
