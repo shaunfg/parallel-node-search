@@ -7,8 +7,6 @@ module tf
         nodes
         branches
         leaves
-        a
-        b
     end
 
     N_nodes(D::Int) = 2^(D+1) - 1
@@ -23,11 +21,16 @@ module tf
             return(2*node)
         end
     end
+
     function right_child(node::Int,T::Tree)
         if 2*node+1 in T.nodes
             return(2*node+1)
         end
     end
+
+    # function progenate(node::Int,T::Tree)
+    #     branches = T.branches
+    # end
 
     function R(node::Int)
         # Get Right ancestors
@@ -57,32 +60,32 @@ module tf
         return(left_ancestors)
     end
 
-    function nodes_subtree(node::Int,t::Tree)
-        # Get Subtree
-        subtree_nodes = []
-        subtree_leaves = []
-        if node in t.leaves
-            append!(subtree_nodes,node)
-            append!(subtree_leaves,node)
-        else
-            append!(subtree_nodes,node)
-            append!(subtree_nodes,nodes_subtree(left_child(node,t),t))
-            append!(subtree_nodes,nodes_subtree(right_child(node,t),t))
-        end
-        return(subtree_nodes)
-    end
-
-    function create_subtree(nodes,t::Tree)
-        leaves = []
-        branches = copy(nodes)
-        for d in nodes
-            if d in t.leaves
-                append!(leaves,d)
-                filter!(x->x≠d,branches)
-            end
-        end
-        return Tree(nodes,branches,leaves)
-    end
+    # function nodes_subtree(node::Int,t::Tree)
+    #     # Get Subtree
+    #     subtree_nodes = []
+    #     subtree_leaves = []
+    #     if node in t.leaves
+    #         append!(subtree_nodes,node)
+    #         append!(subtree_leaves,node)
+    #     else
+    #         append!(subtree_nodes,node)
+    #         append!(subtree_nodes,nodes_subtree(left_child(node,t),t))
+    #         append!(subtree_nodes,nodes_subtree(right_child(node,t),t))
+    #     end
+    #     return(subtree_nodes)
+    # end
+    #
+    # function create_subtree(nodes,t::Tree)
+    #     leaves = []
+    #     branches = copy(nodes)
+    #     for d in nodes
+    #         if d in t.leaves
+    #             append!(leaves,d)
+    #             filter!(x->x≠d,branches)
+    #         end
+    #     end
+    #     return Tree(nodes,branches,leaves)
+    # end
 
     import MLJBase.int
     using CategoricalArrays
@@ -106,38 +109,57 @@ module tf
         return Tree(nodes,branches,leaves)
     end
 
-    function replace_subtree(t::Tree,subtree::Tree)
-        st_nodes_f = subtree.nodes
-        #get the root node of subtree
-        st_root = minimum(st_nodes_f)
-        #get the nodes of original subtree
-        st_nodes_i = nodes_subtree(st_root,t)
-        #delete nodes no longer optimal and add new nodes from optimal subtree
-        keep_nodes = t.nodes[(.!(in(st_nodes_i).(t.nodes)))]
-        append!(keep_nodes,st_nodes_f)
-        #create new tree struct
-        new_leaves = t.leaves[(.!(in(st_nodes_i).(t.leaves)))]
-        new_branches = t.branches[(.!(in(st_nodes_i).(t.branches)))]
-        for j in st_nodes_f
-            if j in subtree.leaves
-                append!(new_leaves,j)
-            else
-                append!(new_branches,j)
-            end
-        end
-        return Tree(keep_nodes,new_branches,new_leaves)
-    end
+    # function replace_subtree(t::Tree,subtree::Tree)
+    #     st_nodes_f = subtree.nodes
+    #     #get the root node of subtree
+    #     st_root = minimum(st_nodes_f)
+    #     #get the nodes of original subtree
+    #     st_nodes_i = nodes_subtree(st_root,t)
+    #     #delete nodes no longer optimal and add new nodes from optimal subtree
+    #     keep_nodes = t.nodes[(.!(in(st_nodes_i).(t.nodes)))]
+    #     append!(keep_nodes,st_nodes_f)
+    #     #create new tree struct
+    #     new_leaves = t.leaves[(.!(in(st_nodes_i).(t.leaves)))]
+    #     new_branches = t.branches[(.!(in(st_nodes_i).(t.branches)))]
+    #     for j in st_nodes_f
+    #         if j in subtree.leaves
+    #             append!(new_leaves,j)
+    #         else
+    #             append!(new_branches,j)
+    #         end
+    #     end
+    #     return Tree(keep_nodes,new_branches,new_leaves)
+    # end
+    #
+    # function assign_class(X,T,a,b,z,e)
+    #     n = size(X,1)
+    #     for i in 1:n
+    #         node = 1
+    #         cascade_down(node,X,i,T,z,a,b,e)
+    #     end
+    # end
+    #
+    # function cascade_down(node::Int,X,i::Int,T,z,a,b,e)
+    #     if node in T.leaves
+    #         assign_leaf(i,node,T,z)
+    #     else
+    #         j = findall(x->x==1, a[:,node])[1]
+    #         if (e[:,j]'*X[i,:] < b[node])
+    #             cascade_down(left_child(node,T),X,i,T,z,a,b,e)
+    #         else
+    #             cascade_down(right_child(node,T),X,i,T,z,a,b,e)
+    #         end
+    #     end
+    # end
+    #
+    # function assign_leaf(i::Int,leafnode::Int,T,z)
+    #     z[i,leafnode] = 1
+    # end
 
 end
 
 
-Y = tf.tf.y_mat(["c1","c2","c1","c3"])
-temp = tf.tf.get_tree(2)
-temp.leaves
-z = [1 0 0 0; 0 0 0 1; 0 0 1 0; 0 1 0 0]
-
-function assign_class(leaf_node::Int, Y::Matrix, z::Matrix)
-    n = size(Y)[1]
-    K = size(Y)[2]
-
-end
+# Y = tf.tf.y_mat(["c1","c2","c1","c3"])
+# temp = tf.tf.get_tree(2)
+# temp.leaves
+# z = [1 0 0 0; 0 0 0 1; 0 0 1 0; 0 1 0 0]
