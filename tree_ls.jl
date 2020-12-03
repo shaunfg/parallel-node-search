@@ -7,24 +7,44 @@ module tf
         nodes
         branches
         leaves
-#        a #pxm matrix recording which variables being split on in each branch
-#        b #m matrix recording split thresholds at each branch
+        #a #pxm matrix recording which variables being split on in each branch
+        #b #m matrix recording split thresholds at each branch
     end
 
-    using Random
+    using Random, DecisionTree, LinearAlgebra
 
-    function get_randtree(depth::Int,p::Int)
+    function warm_start(depth::Int,y,x,seed)
+    # function warm_start(depth::Int,p::Int,z,e,y,x)
         nodes = collect(1:N_nodes(depth))
         branches = collect(1:N_branch(depth))
         leaves = collect(N_branch(depth)+1:N_nodes(depth))
-        # m = length(branches)
-        # b = rand(m,1) #randomize split thresholds for each branch
-        # a = zeros(p,m) #features being splitted in each branch
-        # for j in 1:m
-        #     i = rand(1:p)
-        #     a[i,j] = 1
-        # end
-        return Tree(nodes,branches,leaves)
+        T = Tree(nodes,branches,leaves)
+        m = length(T.branches)
+        n = size(x,1) #num observations
+        p = size(x,2) #num features
+        e = 1*Matrix(I,p,p) #Identity matrix
+        a = zeros(p,m)
+        b = zeros(m)
+        z = zeros(n,length(T.nodes))
+
+        #warmstart with randomForest
+        rf_ntrees = 1
+        seed = Random.seed!(seed)
+        rf = build_forest(y,x,floor(Int,sqrt(p)),rf_ntrees,1.0,depth,rng = seed)
+
+        function branch_constraint(obj,node,a,b,z)
+            if typeof(obj) != Leaf{String} #if the node is a branch get the branching constraints
+                a[obj.featid,node] = 1
+                b[node] = obj.featval
+                branch_constraint(obj.left,2*node,a,b,z)
+                branch_constraint(obj.right,2*node+1,a,b,z)
+            end
+        end
+
+        obj = rf.trees[1]
+        branch_constraint(obj,1,a,b,z) #get the branching constraints from the randomForest
+        z = assign_class(x,T,a,b,e,z) #fill the z matrix with classses
+        return (Tree(nodes,branches,leaves),a,b,z,e)
     end
 
     N_nodes(D::Int) = 2^(D+1) - 1
@@ -35,21 +55,24 @@ module tf
     get_parent(node) = Int(floor(node/2))
 
     function left_child(node::Int,T::Tree)
+        #returns left child node if exists in current tree
         if 2*node in T.nodes
             return(2*node)
         end
     end
 
     function right_child(node::Int,T::Tree)
+        #returns right child node if exists in current tree
         if 2*node+1 in T.nodes
             return(2*node+1)
         end
     end
 
     function progenate(node::Int,T::Tree)
-        branches = vcat(T.branches,node)
-        leaves = vcat(T.leaves,2*node,2*node+1)
-        nodes = vcat(T.nodes,2*node,2*node+1)
+        #append leave nodes to tree struct
+        branches = node
+        leaves = [2*node,2*node+1]
+        nodes = [node,2*node,2*node+1]
         return Tree(nodes,branches,leaves)
     end
 
@@ -82,7 +105,7 @@ module tf
     end
 
     function nodes_subtree(node::Int,t::Tree)
-        # Get Subtree
+        # Get Subtree of a specified node
         subtree_nodes = []
         subtree_leaves = []
         if node in t.leaves
@@ -97,16 +120,19 @@ module tf
     end
 
     function create_subtree(nodes,t::Tree)
-        leaves = []
-        branches = copy(nodes)
-        for d in nodes
-            if d in t.leaves
-                append!(leaves,d)
-                filter!(x->x≠d,branches)
-            end
-        end
+        #return new struct containing subtree
+        leaves = t.leaves[(in(nodes).(t.leaves))]
+        branches = nodes[(.!(in(leaves).(nodes)))]
+        # for d in nodes
+        #     if d in t.leaves
+        #         append!(leaves,d)
+        #         t.leaves[(.!(in(st_nodes_i).(t.leaves)))]
+        #         filter!(x->x≠d,branches)
+        #     end
+        # end
         return Tree(nodes,branches,leaves)
     end
+
 
     import MLJBase.int
     using CategoricalArrays
@@ -142,29 +168,62 @@ module tf
         return Tree(keep_nodes,new_branches,new_leaves)
     end
 
-    function assign_class(X,T,a,b,z,e)
+    function assign_class(X,T,a,b,e,z)
         n = size(X,1)
+        z = zeros(n,maximum(T.nodes))
+        #for each observation, find leaf and assign class
         for i in 1:n
-            node = 1
+            #node = 1
+            node = minimum(T.nodes)
             cascade_down(node,X,i,T,z,a,b,e)
         end
+        return(z)
+    end
+
+    function assign_class_subtree(X,T,a,b,e,z,indices)
+        #for each observation, find leaf and assign class
+        n = size(X,1)
+        z = zeros(n,maximum(T.nodes))
+        for i in indices
+            #node = 1
+            node = minimum(T.nodes)
+            cascade_down(node,X,i,T,z,a,b,e)
+        end
+        return(z)
     end
 
     function cascade_down(node::Int,X,i::Int,T,z,a,b,e)
+        #cascade observation down the split
         if node in T.leaves
             assign_leaf(i,node,T,z)
         else
-            j = findall(x->x==1, a[:,node])[1]
-            if (e[:,j]'*X[i,:] < b[node])
-                cascade_down(left_child(node,T),X,i,T,z,a,b,e)
+            j = findall(x->x==1, a[:,node])
+            if isempty(j)
+                tf.cascade_down(tf.right_child(node,T),X,i,T,z,a,b,e)
             else
-                cascade_down(right_child(node,T),X,i,T,z,a,b,e)
+                if (e[:,j[1]]'*X[i,:] < b[node])
+                    tf.cascade_down(tf.left_child(node,T),X,i,T,z,a,b,e)
+                else
+                    tf.cascade_down(tf.right_child(node,T),X,i,T,z,a,b,e)
+                end
             end
         end
     end
 
     function assign_leaf(i::Int,leafnode::Int,T,z)
+        #assign observation to leaf
         z[i,leafnode] = 1
+    end
+
+    function subtree_inputs(Tt::Tree,z::Array{Float64,2},x,y)
+        #returns a list of indices of observations contained in leaf nodes of subtree
+        obs = []
+        for leave in Tt.leaves
+            append!(obs,findall(i->i==1, z[:,leave]))
+        end
+        # XI = x[indices,:]
+        # yi = y[indices]
+        return(obs,x[obs,:],y[obs,:],z[obs,:])
     end
 
 end
