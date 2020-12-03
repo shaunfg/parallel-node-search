@@ -1,7 +1,7 @@
 include("./tree_ls.jl")
 #input starting decision tree, training data X,y
 #output locally optimal decision tree
-using CSV, DataFrames, Random, LinearAlgebra
+using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
 
 cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
 
@@ -23,23 +23,64 @@ p = size(x,2) #num features
 e = 1*Matrix(I,p,p) #Identity matrix
 #--- 8.1 Local Search
 
+
 #random restart: initialize a random tree
 seed = 100
 Random.seed!(seed)
-depth = 2
-T = tf.get_randtree(depth,3)
-m = length(T.branches) #num branches
-z = zeros(n,length(T.nodes)) #observations x leaf assignments
+tdepth = 2
+T,a,b,z,e = tf.warm_start(tdepth,y,x)
+
+#TO DO: we need to generate a randomForest starting tree
+rf = build_forest(y,x,floor(Int,sqrt(p)),rf_ntrees,1.0,depth)
+fieldnames(typeof(rf.trees[1]))
+fieldnames(typeof(rf.trees[1]))
+typeof(rf.trees[1].right.right) == Leaf{String}
+
+
+b = zeros(m)
 m = length(T.branches)
-b = rand(m,1) #randomize split thresholds for each branch
-a = zeros(p,m) #features being splitted in each branch
-for j in 1:m
-    i = rand(1:p)
-    a[i,j] = 1
+a = zeros(p,m)
+# root = 1
+# obj = rf.trees[1]
+# branch_constraint(obj,root,a,b,z)
+
+# m = length(T.branches) #num branches
+z = zeros(n,length(T.nodes)) #observations x leaf assignments
+# m = length(T.branches)
+# b = rand(m,1) #randomize split thresholds for each branch
+# a = zeros(p,m) #features being splitted in each branch
+# for j in 1:m
+#     i = rand(1:p)
+#     a[i,j] = 1
+# end
+
+T = tf.warm_start(depth,p,a,b,z,e,y,x)
+
+function warm_start_rf(y,x,depth,T,a,b,z,e)
+    #get randomForest tree as warmstart
+    #do we need to setseed???
+    rf_ntrees = 1
+    rf = build_forest(y,x,floor(Int,sqrt(p)),rf_ntrees,1.0,depth)
+    #functions to grab left and right nodes
+
+    function branch_constraint(obj,node,a,b,z)
+        if typeof(obj) != Leaf{String} #if the node is a branch
+            a[obj.featid,node] = 1
+            b[node] = obj.featval
+            branch_constraint(obj.left,2*node,a,b,z)
+            branch_constraint(obj.right,2*node+1,a,b,z)
+        end #it is a leave
+    end
+    obj = rf.trees[1]
+    branch_constraint(obj,root,a,b,z)
+    #tf.assign_class(x,T,a,b,z,e)
 end
 
-#starting decision tree and assigments
+warm_start_rf(y,x,depth,T,a,b,z,e)
 tf.assign_class(x,T,a,b,z,e)
+
+#starting decision tree and assigments
+# tf.assign_class(x,T,a,b,z,e)
 L = loss(T,Y,z)
 
 #function to calculate loss
@@ -70,15 +111,17 @@ while tol > 1e-4 #while improvements are still possible
     shuffled_t = shuffle(T.nodes)
     for t in shuffled_t
 
-        #get the indices of the nodes in the subtree and create subTree struct
-        I = tf.nodes_subtree(2,T)
-        Tt = tf.create_subtree(I,T)
+        #Create the subtree struct
+        subtree_nodes = tf.nodes_subtree(2,T)
+        Tt = tf.create_subtree(subtree_nodes,T)
+        #Get the indices of the nodes in the subtree and create subTree struct
+        indices = tf.subtree_obs(Tt,z)
+        xi = x[indices,:]
+        yi = y[indices]
+
 
         #Optimize subtree
-        #XI =
-        #YI =
-        #Tt = optimize_node_parallel(Tt,XI,YI)
-
+        Tt = optimize_node_parallel(Tt,XI,YI)
         #Replace the original tree with optimal subtree
         T = tf.replace_subtree(T,Tt)
         tf.assign_class(x,T,a,b,z,e)
@@ -94,18 +137,30 @@ end
 # Output: Subtree T with optimized parallel split at root
 function optimize_node_parallel(T::Tree,XI,YI)
     root = minimum(T.nodes)
-    if root = Tt.branches #if the subtree is a branch get its children
+    if root = T.branches #if the subtree is a branch of the full tree get its children
         Tl, Tu = left_child(root,T), right_child(root,T)
     else #it is a leaf -> create new leaf nodes
         Tprog = progenate(root,T)
+        #tl and tu are indices of lower and upper children
         Tl = left_child(root,Tprog)
         Tu = right_child(root,Tprog)
         #enforce splits for new branch
     end
-    Lbest = loss(T,X,y)
+    error_best = loss(T,X,y)
 
-    #Tpara, Lpara =
-    ######
+    Tpara, error_para = best_parallelsplit(Tl,Tu,X,y)
+    if error_para < error_best
+        T,error_best = Tpara,error_para
+    end
+    error_lower = loss(Tl,X,y)
+    if error_lower < error_best
+        T,error_best = Tl,error_lower
+    end
+    error_upper = loss(Tu,X,y)
+    if error_upper < error_best
+        T,error_best = Tu,error_upper
+    end
+    return(T)
 end
 
 #--- Best Parallel Split
@@ -123,21 +178,26 @@ function minleafsize(T,Nt)
     return(minbucket)
 end
 
-function set_split(T,b)
+function reoptimize_split(T,b)
 
+    b =
+end
+
+function best_parallelsplit(Tl,Tu,X,y)
+
+end
 
 n,p = size(X)
-Lbest = Inf
+error_best = Inf
 for j in 1:p
     values = sort(X[:,j])
     for i in 1:n-1
         b = 0.5*(values[i] + values[i+1])
         T = assign_class
-
         if minleafsize(T,Nt) >= Nmin
             error = loss(T,X,y)
-            if L < Lbest
-                Lbest = L
+            if error < error_best
+                error_best = error
                 Tbest = T
             end
         end
