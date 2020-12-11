@@ -4,6 +4,7 @@ include("./tree_ls.jl")
 using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
 
 cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
+cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
 
 iris_full = CSV.read("iris.csv",DataFrame)
 iris = iris_full[randperm(size(iris_full,1)),:]#[1:3,:]
@@ -72,7 +73,7 @@ end
 #Initialize losses
 
 tol = 100
-
+T,a,b,z,e = tf.warm_start(tdepth,y,x,seed)
 while tol > 1e-4 #while improvements are still possible
     Lprev = loss(T,Y,z)
     #Randomize the nodes
