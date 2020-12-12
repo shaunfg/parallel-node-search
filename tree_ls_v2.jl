@@ -21,8 +21,7 @@ module tf
         #branches = collect(1:N_branch(depth))
         #leaves = collect(N_branch(depth)+1:N_nodes(depth))
         T = Tree(nodes,branches,leaves)
-        m = length(T.branches)
-        m_nodes = length(T.nodes)
+
         n = size(x,1) #num observations
         p = size(x,2) #num features
         e = 1*Matrix(I,p,p) #Identity matrix
@@ -200,6 +199,7 @@ module tf
         for i in indices
             #node = 1
             node = minimum(T.nodes)
+            #println("Starting node :",node)
             cascade_down(node,X,i,T,z,a,b,e)
         end
         return(z)
@@ -208,18 +208,15 @@ module tf
     function cascade_down(node::Int,X,i::Int,T,z,a,b,e)
         #cascade observation down the split
         if node in T.leaves
+            #println("Node: ",node)
             assign_leaf(i,node,T,z)
         else
             j = a[node]
-            #j = findall(x->x==1, a[:,node])
-            if isempty(j)
-                tf.cascade_down(tf.right_child(node,T),X,i,T,z,a,b,e)
+            if (e[:,j[1]]'*X[i,:] < b[node])
+                #println("X3 value: ",X[i,j])
+                tf.cascade_down(tf.left_child(node,T),X,i,T,z,a,b,e)
             else
-                if (e[:,j[1]]'*X[i,:] < b[node])
-                    tf.cascade_down(tf.left_child(node,T),X,i,T,z,a,b,e)
-                else
-                    tf.cascade_down(tf.right_child(node,T),X,i,T,z,a,b,e)
-                end
+                tf.cascade_down(tf.right_child(node,T),X,i,T,z,a,b,e)
             end
         end
     end

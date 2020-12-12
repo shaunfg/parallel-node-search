@@ -54,25 +54,27 @@ function loss(T,Y,z)
     return(L)
 end
 
-function loss_subtree(T,Y,z,indices)
-    L̂ = length(T.leaves)
+function loss_subtree(Tt,YI,z,indices,Y)
+    L̂ = length(Tt.leaves)
     #Y_mat = tf.y_mat(Y)
     classes = size(Y,2) #number of classes
-    Nt = zeros(maximum(T.nodes))
-    Nkt = zeros(classes,maximum(T.nodes))
-    Lt = zeros(maximum(T.nodes))
+    Nt = zeros(maximum(Tt.nodes))
+    Nkt = zeros(classes,maximum(Tt.nodes))
+    Lt = zeros(maximum(Tt.nodes))
     L = 0
-    z_mat = zeros(maximum([k for (k,v) in z]),maximum(T.nodes))
-    for t in T.leaves
+    z_mat = zeros(maximum([k for (k,v) in z]),maximum(Tt.nodes))
+    #print(z_mat)
+    for t in Tt.leaves
         i = [k for (k,v) in z if v==t]
         z_mat[i,t] .= 1
-        Nt[t] = length(i)
+        Nt[t] = sum(z_mat[:,t])
         for k in 1:classes
             for ii in i
-                if Y[:,k] == 1
-                    Nkt[k,t] += z_mat[:,t]
+                if Y[ii,k] == 1
+                    Nkt[k,t] += z_mat[ii,t]
                 end
             end
+            #println(t,"Passed")
         end
         Lt[t] = Nt[t] - maximum(Nkt[:,t])
     end
@@ -85,15 +87,18 @@ end
 include("./tree_ls_v2.jl")
 
 
-global T,a,b,z,e = tf.warm_start(tdepth,y,x,seed)
-
+T,a,b,z,e = tf.warm_start(tdepth,y,x,seed)
+iter = 0
 tol = 100
-while tol > 1#1e-4 #while improvements are still possible
+while tol > 1e-4 #while improvements are still possible
     Lprev = loss(T,Y,z)
     #Randomize the nodes
-    shuffled_t = T.nodes#shuffle(T.nodes)
-    for t in shuffled_t
-        println(t)
+    shuffled_t = shuffle(T.nodes)
+    for t in 2#shuffled_t
+        iter += 1
+        println("Iter: ",iter)
+        #println(T)
+        #println("Reading :", minleafsize(T,z))
         #Create the subtree struct
         subtree_nodes = tf.nodes_subtree(t,T)
         Tt = tf.create_subtree(subtree_nodes,T)
@@ -101,14 +106,19 @@ while tol > 1#1e-4 #while improvements are still possible
         indices,XI,YI = tf.subtree_inputs(Tt,z,x,Y)
         #Optimize subtree
         if !isempty(XI)
-            Ttnew,anew,bnew,z = optimize_node_parallel(Tt,XI,YI,a,b,z,indices,x)
-            global a = anew
-            global b = bnew
-            local Tt = Ttnew
+            #println(b)
+            Ttnew,anew,bnew = optimize_node_parallel(Tt,XI,YI,a,b,z,indices,x,Y)
+            #print(bnew)
+            #global a = anew
+            #global b = bnew
+            #local Tt = Ttnew
             #Replace the original tree with optimal subtree
-            T = tf.replace_subtree(T,Tt)
+            T = tf.replace_subtree(T,Ttnew)
             #println(T)
+            a = anew
+            b = bnew
             z = tf.assign_class(x,T,a,b,e,z)
+            #println("Saving :", minleafsize(T,z))
         end
         Lcur = loss(T,Y,z)
         tol = abs(Lprev - Lcur)
@@ -120,16 +130,17 @@ end
 #--- Optimize Node Parallel
 # Input: Subtree T to optimize, training data X,y
 # Output: Subtree T with optimized parallel split at root
-function optimize_node_parallel(Tt,XI,YI,a,b,z,indices,X)
+function optimize_node_parallel(Tt,XI,YI,a,b,z,indices,X,Y)
     root = minimum(Tt.nodes)
-    znew = z
+    znew = copy(z)
     zbest = tf.assign_class_subtree(X,Tt,a,b,e,z,indices)
-    abest = a
-    bbest = b
-    anew = a
-    bnew = b
-    error_best = loss_subtree(Tt,YI,zbest,indices)
-
+    abest = copy(a)
+    bbest = copy(b)
+    anew = copy(a)
+    bnew = copy(b)
+    #println(minleafsize(Tt,zbest))
+    error_best = loss_subtree(Tt,YI,zbest,indices,Y)
+    println("Error :",error_best)
     if root in Tt.branches #if the subtree is a branch of the full tree get its children
         #println("test-branch",root)
         Tl = tf.left_child(root,Tt)
@@ -137,49 +148,39 @@ function optimize_node_parallel(Tt,XI,YI,a,b,z,indices,X)
         Tlower = tf.create_subtree(tf.nodes_subtree(Tl,Tt),Tt)
         Tupper = tf.create_subtree(tf.nodes_subtree(Tu,Tt),Tt)
     else #it is a leaf -> create new leaf nodes
+        #println("test-leaf",root)
         Tt = tf.progenate(root,Tt)
         #Tl and Tu are indices of lower and upper children
         Tlnew = tf.left_child(root,Tt)
         Tunew = tf.right_child(root,Tt)
         Tlower = tf.Tree([Tlnew],[],[Tlnew])
         Tupper = tf.Tree([Tunew],[],[Tunew])
-        # while size(anew,2) < Tunew
-        #     anew = hcat(anew,zeros(size(anew,1)))
-        # end
-        # while length(bnew) < Tunew
-        #     bnew = vcat(bnew,0)
-        # end
-        # while size(znew,2) < Tunew
-        #     znew = hcat(znew,zeros(size(znew,1)))
-        # end
+        anew, bnew, znew = new_feasiblesplit(root,XI,YI,Tt,anew,bnew,e,znew,indices,X)
     end
-
-    # sub_nodes = nodes_subtree(root,Tt)
-    # anew = a[:,sub_nodes]
-    # bnew = b[sub_nodes]
-    Tpara, error_para, apara, bpara, zpara = best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,znew,indices,X)
-    if error_para < error_best
+    Tpara, error_para, apara, bpara, zpara = best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,znew,indices,X,Y)
+    if error_para <= error_best
+        print("Error para, Error best: ",error_para,", ",error_best)
         Tt,error_best,abest,bbest,zbest = Tpara,error_para,apara,bpara,zpara
     end
 
     zlower = tf.assign_class_subtree(X,Tlower,anew,bnew,e,znew,indices)
     zupper = tf.assign_class_subtree(X,Tupper,anew,bnew,e,znew,indices)
 
-    error_lower = loss_subtree(Tlower,YI,zlower,indices)
+    error_lower = loss_subtree(Tlower,YI,zlower,indices,Y)
     if error_lower < error_best
-        Tt,error_best,abest,bbest = Tlower,error_lower,anew,bnew
+        Tt,error_best,abest,bbest,zbest = Tlower,error_lower,anew,bnew
         delete!(abest,root)
         delete!(bbest,root)
     end
-    error_upper = loss_subtree(Tupper,YI,zupper,indices)
+    error_upper = loss_subtree(Tupper,YI,zupper,indices,Y)
     if error_upper < error_best
-        Tt,error_best,abest,bbest = Tupper,error_upper,anew,bnew
+        Tt,error_best,abest,bbest,zbest = Tupper,error_upper,anew,bnew
         delete!(abest,root)
         delete!(bbest,root)
     end
-
-    z = tf.assign_class(X,Tt,abest,bbest,e,zbest)
-    return(Tt,abest,bbest,z)
+    #println("Saving :", minleafsize(Tt,zbest))
+    #z = tf.assign_class(X,Tt,abest,bbest,e,zbest)
+    return(Tt,abest,bbest)
 end
 
 #--- Best Parallel Split
@@ -194,24 +195,29 @@ function minleafsize(T,z)
     for t in T.leaves
         i = [k for (k,v) in z if v==t]
         z_mat[i,t] .= 1
-        Nt[t] = length(i)
-        if Nt[t] < minbucket
+        Nt[t] = sum(z_mat[:,t])
+        if (Nt[t] > 0) & (Nt[t] < minbucket)
             minbucket = Nt[t]
         end
     end
     return(minbucket)
 end
 
-function best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X;Nmin=5)
-    # println("test- in parallel split")
+length([k for (k,v) in z if v==511])
+
+function best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X,Y;Nmin=5)
+    #println("test- in parallel split")
     n,p = size(XI)
     error_best = Inf
     Tbest = Tt
-    abest = anew
-    bbest = bnew
-    atry = anew
-    btry = bnew
-    zbest = z
+    Tttry = Tt
+    abest = copy(anew)
+    bbest = copy(bnew)
+    atry = copy(anew)
+    btry = copy(bnew)
+    zbest = copy(z)
+    ztry = copy(z)
+    #println(root,": ",minleafsize(Tt,z))
     for j in 1:p
         values = sort(XI[:,j])
         for i in 1:n-1
@@ -219,29 +225,54 @@ function best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X;Nmin=5)
             atry[root] = j
             btry[root] = bsplit
             #create a tree with this new a and b
-            znew = tf.assign_class_subtree(X,Tt,atry,btry,e,z,indices)
+            #println("btry: ",btry)
+            ztry = tf.assign_class_subtree(X,Tttry,atry,btry,e,ztry,indices)
             # println("test-assignedclass")
-            if minleafsize(Tt,znew) >= Nmin
-                println("minleafsize",minleafsize(Tt,znew))
-                error = loss_subtree(Tt,YI,znew,indices)
+            # if root == 255
+            # end
+            if minleafsize(Tttry,ztry) >= Nmin
+                #println(minleafsize(Tt,ztry))
+                error = loss_subtree(Tttry,YI,ztry,indices,Y)
+                #println("Best_error, Error: ",error_best,", ", error)
                 if error < error_best
                     error_best = error
-                    Tbest = Tt
-                    zbest = znew
-                    abest = anew
-                    bbest = bnew
+                    Tbest = Tttry
+                    abest = atry
+                    bbest = btry
+                    zbest = ztry
                 end
             end
         end
     end
+    #println("bbest: ",bbest)
+    #println("Inner minleaf: ",minleafsize(Tbest,zbest))
+    #println("Inner bbest: ",bbest)
     return(Tbest, error_best, abest, bbest, zbest)
 end
 
 
-
-# bee = Dict("A"=>1)
-# bee["A"]
-# bee.keys
-# bee.vals
-# bee
-# bee
+function new_feasiblesplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X;Nmin=5)
+    # println("test- in parallel split")
+    n,p = size(XI)
+    Tfeas = Tt
+    atry = copy(anew)
+    btry = copy(bnew)
+    ztry = copy(z)
+    Infeasible = true
+    while Infeasible
+        for j in 1:p
+            values = sort(XI[:,j])
+            for i in 1:n-1
+                bsplit = 0.5*(values[i] + values[i+1])
+                atry[root] = j
+                btry[root] = bsplit
+                ztry = tf.assign_class_subtree(X,Tt,atry,btry,e,ztry,indices)
+                if (minleafsize(Tt,ztry) >= Nmin)
+                    Infeasible = false
+                    return(atry, btry, ztry)
+                    end
+                end
+            end
+        end
+    end
+end
