@@ -21,15 +21,17 @@ module tf
         n = size(x,1) #num observations
         p = size(x,2) #num features
         T = Tree([],[],[],Dict(),Dict(),Dict())
-        e = 1*Matrix(I,p,p)
+        e = get_e(p)
         #warmstart with randomForest
         seed = Random.seed!(seed)
         rf = build_forest(y,x,floor(Int,sqrt(p)),rf_ntrees,0.7,depth,5,2,rng = seed)
         obj = rf.trees[1]
         T = _branch_constraint(obj,1,T,e) #get the branching constraints from the randomForest
-        T = _assign_class(x,T,e) #fill the z matrix with classses
+        T = assign_class(x,T,e) #fill the z matrix with classses
         return T
     end
+
+    get_e(p) = 1*Matrix(I,p,p)
 
     function _branch_constraint(obj,node,t,e)
         append!(t.nodes,node)
@@ -45,10 +47,14 @@ module tf
         return t
     end
 
-    function _assign_class(X,T,e)
-        n = size(X,1)
+    function assign_class(X,T,e;indices = false)
+        if indices == false
+            N = 1:size(X,1)
+        else
+            N = indices
+        end
         #for each observation, find leaf and assign class
-        for i in 1:n
+        for i in N
             # node = 1
             node = minimum(T.nodes)
             _cascade_down(node,X,i,T,e)
@@ -93,12 +99,54 @@ module tf
         end
     end
 
-    function progenate(node,T)#::Int,T::Tree)
+    function progenate(node,Tt,e,XI,YI,indices,X;Nmin=5) #::Int,T::Tree)
         #append leave nodes to tree struct
-        branches = node
-        leaves = [2*node,2*node+1]
-        nodes = [node,2*node,2*node+1]
-        return Tree(nodes,branches,leaves)
+        new_tree = new_feasiblesplit(node,XI,YI,Tt,e,indices,X;Nmin=Nmin)
+        # println("----newnodes",new_tree.nodes)
+        return new_tree
+    end
+
+    # function new_feasiblesplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X;Nmin=5)
+    function new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5)
+        # println("test- in parallel split")
+        branches = root
+        leaves = [2*root,2*root+1]
+        nodes = [root,2*root,2*root+1]
+        n,p = size(XI)
+        Tfeas = Tree(branches,leaves,nodes,Dict(),Dict(),Dict())
+        # println("----newnodes2  ",nodes)
+        Infeasible = true
+        while Infeasible
+            for j in 1:p
+                values = sort(XI[:,j])
+                for i in 1:n-1
+                    bsplit = 0.5*(values[i] + values[i+1])
+                    Tfeas = tf.assign_class(X,Tfeas,e;indices = indices)
+                    Tfeas.a[root] = j
+                    Tfeas.b[root] = bsplit
+                    minsize = minleafsize(Tt)
+                    if (minsize >= Nmin)
+                        Infeasible = false
+                        return Tfeas
+                    end
+                end
+            end
+        end
+    end
+
+    function minleafsize(T)
+        minbucket = Inf
+        Nt = zeros(maximum(T.nodes))
+        z_mat = zeros(maximum([k for (k,v) in T.z]),maximum(T.nodes))
+        for t in T.leaves
+            i = [k for (k,v) in T.z if v==t]
+            z_mat[i,t] .= 1
+            Nt[t] = sum(z_mat[:,t])
+            if (Nt[t] > 0) & (Nt[t] < minbucket)
+                minbucket = Nt[t]
+            end
+        end
+        return(minbucket)
     end
 
     function R(node::Int)
@@ -137,6 +185,7 @@ module tf
             append!(subtree_nodes,node)
             append!(subtree_leaves,node)
         else
+            println("marker34")
             append!(subtree_nodes,node)
             append!(subtree_nodes,_nodes_subtree(tf.left_child(node,t),t))
             append!(subtree_nodes,_nodes_subtree(tf.right_child(node,t),t))
@@ -171,7 +220,9 @@ module tf
     function replace_subtree(t,subtree)#::Tree,subtree::Tree)
         st_nodes_f = subtree.nodes #get the root node of subtree
         st_root = minimum(st_nodes_f) #get the nodes of original subtree
-        st_nodes_i = nodes_subtree(st_root,t) #delete nodes no longer optimal and add new nodes from optimal subtree
+        # println(subtree)
+        println("t= ",st_root)
+        st_nodes_i = _nodes_subtree(st_root,t) #delete nodes no longer optimal and add new nodes from optimal subtree
         keep_nodes = t.nodes[(.!(in(st_nodes_i).(t.nodes)))]
         append!(keep_nodes,st_nodes_f)
         #create new tree struct
@@ -184,21 +235,12 @@ module tf
                 append!(new_branches,j)
             end
         end
-        return Tree(keep_nodes,new_branches,new_leaves)
+        # println(t.a)
+        # append the right a,b,z values.
+        return Tree(keep_nodes,new_branches,new_leaves,t.a,t.b,t.z)
     end
 
 
-    function assign_class_subtree(X,T,a,b,e,z,indices)
-        #for each observation, find leaf and assign class
-        n = size(X,1)
-        z = Dict()
-        for i in indices
-            #node = 1
-            node = minimum(T.nodes)
-            _cascade_down(node,X,i,T,z,a,b,e)
-        end
-        return(z)
-    end
 
 
     function subtree_inputs(Tt::Tree,x,y)
@@ -208,7 +250,7 @@ module tf
         for leaf in Tt.leaves
             append!(obs,[k for (k,v) in Tt.z if v==leaf])
         end
-        return(obs,x[obs,:],Y[obs,:])
+        return(obs)#,x[obs,:],Y[obs,:])
     end
 
 end
