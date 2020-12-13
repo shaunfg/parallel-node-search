@@ -3,8 +3,8 @@ include("./tree_ls_v2.jl")
 #output locally optimal decision tree
 using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
 
-cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
-#cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
+# cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
+cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
 
 iris_full = CSV.read("iris.csv",DataFrame)
 iris = iris_full[randperm(size(iris_full,1)),:]#[1:3,:]
@@ -28,21 +28,22 @@ seed = 100
 tdepth = 2
 
 #starting decision tree
-T,a,b,z,e = tf.warm_start(tdepth,y,x,seed)
+T = tf.warm_start(tdepth,y,x,seed)
 
 #function to calculate loss
 #function to calculate loss
-function loss(T,Y,z)
+function loss(T,Y)
     L̂ = length(T.leaves)
     #Y_mat = tf.y_mat(Y)
     classes = size(Y,2) #number of classes
     Nt = zeros(maximum(T.nodes))
     Nkt = zeros(classes,maximum(T.nodes))
     Lt = zeros(maximum(T.nodes))
-    L = 0
     z_mat = zeros(size(Y,1),maximum(T.nodes))
+    L = 0
     for t in T.leaves
-        i = [k for (k,v) in z if v==t]
+        i = [k for (k,v) in T.z if v==t]
+
         z_mat[i,t] .= 1
         Nt[t] = length(i)
         for k in 1:classes
@@ -51,8 +52,12 @@ function loss(T,Y,z)
         Lt[t] = Nt[t] - maximum(Nkt[:,t])
     end
     L = sum(Lt)/L̂ #### + α*Cp......
+    println("Nkt",Nkt)
+    println("Nt",Nt)
     return(L)
 end
+
+loss(T,Y)
 
 function loss_subtree(T,Y,z,indices)
     L̂ = length(T.leaves)
@@ -93,7 +98,8 @@ while tol > 1#1e-4 #while improvements are still possible
     #Randomize the nodes
     shuffled_t = T.nodes#shuffle(T.nodes)
     for t in shuffled_t
-        println(t)
+        global T
+        global z
         #Create the subtree struct
         subtree_nodes = tf.nodes_subtree(t,T)
         Tt = tf.create_subtree(subtree_nodes,T)
@@ -114,20 +120,21 @@ while tol > 1#1e-4 #while improvements are still possible
         tol = abs(Lprev - Lcur)
     end
     #print(tol)
-end
+end['_=]']
 
 
 #--- Optimize Node Parallel
 # Input: Subtree T to optimize, training data X,y
 # Output: Subtree T with optimized parallel split at root
-function optimize_node_parallel(Tt,XI,YI,a,b,z,indices,X)
+function optimize_node_parallel(Tt,XI,YI,indices,X)
     root = minimum(Tt.nodes)
-    znew = z
-    zbest = tf.assign_class_subtree(X,Tt,a,b,e,z,indices)
-    abest = a
-    bbest = b
-    anew = a
-    bnew = b
+    --- set to T.a etc.
+    # znew = z
+    # zbest = tf.assign_class_subtree(X,Tt,a,b,e,z,indices)
+    # abest = a
+    # bbest = b
+    # anew = a
+    # bnew = b
     error_best = loss_subtree(Tt,YI,zbest,indices)
 
     if root in Tt.branches #if the subtree is a branch of the full tree get its children
@@ -143,20 +150,8 @@ function optimize_node_parallel(Tt,XI,YI,a,b,z,indices,X)
         Tunew = tf.right_child(root,Tt)
         Tlower = tf.Tree([Tlnew],[],[Tlnew])
         Tupper = tf.Tree([Tunew],[],[Tunew])
-        # while size(anew,2) < Tunew
-        #     anew = hcat(anew,zeros(size(anew,1)))
-        # end
-        # while length(bnew) < Tunew
-        #     bnew = vcat(bnew,0)
-        # end
-        # while size(znew,2) < Tunew
-        #     znew = hcat(znew,zeros(size(znew,1)))
-        # end
     end
 
-    # sub_nodes = nodes_subtree(root,Tt)
-    # anew = a[:,sub_nodes]
-    # bnew = b[sub_nodes]
     Tpara, error_para, apara, bpara, zpara = best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,znew,indices,X)
     if error_para < error_best
         Tt,error_best,abest,bbest,zbest = Tpara,error_para,apara,bpara,zpara
@@ -185,23 +180,6 @@ end
 #--- Best Parallel Split
 # Input: Tl and Tu subtrees as children of new split, X and y
 # Output: Subtree with best parallel split at root, error of best tree
-
-#Output the minimum number of observations in any leaf
-function minleafsize(T,z)
-    minbucket = Inf
-    Nt = zeros(maximum(T.nodes))
-    z_mat = zeros(maximum([k for (k,v) in z]),maximum(T.nodes))
-    for t in T.leaves
-        i = [k for (k,v) in z if v==t]
-        z_mat[i,t] .= 1
-        Nt[t] = length(i)
-        if Nt[t] < minbucket
-            minbucket = Nt[t]
-        end
-    end
-    return(minbucket)
-end
-
 function best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X;Nmin=5)
     # println("test- in parallel split")
     n,p = size(XI)
@@ -237,11 +215,23 @@ function best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X;Nmin=5)
     return(Tbest, error_best, abest, bbest, zbest)
 end
 
+#Output the minimum number of observations in any leaf
+function minleafsize(T,z)
+    minbucket = Inf
+    Nt = zeros(maximum(T.nodes))
+    z_mat = zeros(maximum([k for (k,v) in z]),maximum(T.nodes))
+    for t in T.leaves
+        i = [k for (k,v) in z if v==t]
+        z_mat[i,t] .= 1
+        Nt[t] = length(i)
+        if Nt[t] < minbucket
+            minbucket = Nt[t]
+        end
+    end
+    return(minbucket)
+end
+#----
+global T,a,b,z,e = tf.warm_start(tdepth,y,x,seed)
+minleafsize(T,z)
 
-
-# bee = Dict("A"=>1)
-# bee["A"]
-# bee.keys
-# bee.vals
-# bee
-# bee
+best_parallelsplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X;Nmin=5)
