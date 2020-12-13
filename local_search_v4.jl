@@ -44,11 +44,16 @@ function loss(T,Y,z)
     for t in T.leaves
         i = [k for (k,v) in z if v==t]
         z_mat[i,t] .= 1
-        Nt[t] = length(i)
+        Nt[t] = sum(z_mat[:,t])
         for k in 1:classes
-            Nkt[k,t] = z_mat[:,t]'*Y[:,k]
+            for ii in i
+                if Y[ii,k] == 1
+                    Nkt[k,t] += z_mat[ii,t]
+                end
+            end
         end
         Lt[t] = Nt[t] - maximum(Nkt[:,t])
+        println(t, ": ",Lt[t])
     end
     L = sum(Lt)/L̂ #### + α*Cp......
     return(L)
@@ -97,7 +102,7 @@ while tol > 1e-4 #while improvements are still possible
     for t in 2#shuffled_t
         iter += 1
         println("Iter: ",iter)
-        #println(T)
+        println(t)
         #println("Reading :", minleafsize(T,z))
         #Create the subtree struct
         subtree_nodes = tf.nodes_subtree(t,T)
