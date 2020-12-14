@@ -11,11 +11,17 @@ module tf
         b
         z
     end
+    Base.copy(s::Tree) = Tree(s.x, s.y)
 
     using Random, DecisionTree, LinearAlgebra
     import MLJBase.int
     using CategoricalArrays
 
+    function copy(Told)
+        Tnew = Tree(Told.nodes,Told.branches,Told.leaves,Told.a,
+                    Told.b,Told.z)
+        return Tnew
+    end
 
     function warm_start(depth::Int,y,x,seed; rf_ntrees = 1)
         n = size(x,1) #num observations
@@ -107,32 +113,32 @@ module tf
     end
 
     # function new_feasiblesplit(root,XI,YI,Tt,anew,bnew,e,z,indices,X;Nmin=5)
-    function new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5)
-        # println("test- in parallel split")
-        branches = root
-        leaves = [2*root,2*root+1]
-        nodes = [root,2*root,2*root+1]
-        n,p = size(XI)
-        Tfeas = Tree(branches,leaves,nodes,Dict(),Dict(),Dict())
-        # println("----newnodes2  ",nodes)
-        Infeasible = true
-        while Infeasible
-            for j in 1:p
-                values = sort(XI[:,j])
-                for i in 1:n-1
-                    bsplit = 0.5*(values[i] + values[i+1])
-                    Tfeas = tf.assign_class(X,Tfeas,e;indices = indices)
-                    Tfeas.a[root] = j
-                    Tfeas.b[root] = bsplit
-                    minsize = minleafsize(Tt)
-                    if (minsize >= Nmin)
-                        Infeasible = false
-                        return Tfeas
-                    end
-                end
-            end
-        end
-    end
+    # function new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5)
+    #     # println("test- in parallel split")
+    #     branches = root
+    #     leaves = [2*root,2*root+1]
+    #     nodes = [root,2*root,2*root+1]
+    #     n,p = size(XI)
+    #     Tfeas = Tree(branches,leaves,nodes,Dict(),Dict(),Dict())
+    #     # println("----newnodes2  ",nodes)
+    #     Infeasible = true
+    #     while Infeasible
+    #         for j in 1:p
+    #             values = sort(XI[:,j])
+    #             for i in 1:n-1
+    #                 bsplit = 0.5*(values[i] + values[i+1])
+    #                 Tfeas = tf.assign_class(X,Tfeas,e;indices = indices)
+    #                 Tfeas.a[root] = j
+    #                 Tfeas.b[root] = bsplit
+    #                 minsize = minleafsize(Tt)
+    #                 if (minsize >= Nmin)
+    #                     Infeasible = false
+    #                     return Tfeas
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
 
     function minleafsize(T)
         minbucket = Inf
@@ -185,7 +191,7 @@ module tf
             append!(subtree_nodes,node)
             append!(subtree_leaves,node)
         else
-            println("marker34")
+            # println("marker34")
             append!(subtree_nodes,node)
             append!(subtree_nodes,_nodes_subtree(tf.left_child(node,t),t))
             append!(subtree_nodes,_nodes_subtree(tf.right_child(node,t),t))
@@ -198,6 +204,7 @@ module tf
         #return new struct containing subtree
         leaves = t.leaves[(in(nodes).(t.leaves))]
         branches = nodes[(.!(in(leaves).(nodes)))]
+        # println("branches", branches)
         bs = Dict(key => t.b[key] for key in branches)
         as = Dict(key => t.a[key] for key in branches)
         zs = Dict(k => t.z[k] for (k,v) in t.z if v in leaves)
@@ -217,11 +224,12 @@ module tf
         return(Y)
     end
 
-    function replace_subtree(t,subtree)#::Tree,subtree::Tree)
+    function replace_subtree(t,subtree,X)#::Tree,subtree::Tree)
         st_nodes_f = subtree.nodes #get the root node of subtree
         st_root = minimum(st_nodes_f) #get the nodes of original subtree
+        e = get_e(size(X,2))
         # println(subtree)
-        println("t= ",st_root)
+        # println("t= ",st_root)
         st_nodes_i = _nodes_subtree(st_root,t) #delete nodes no longer optimal and add new nodes from optimal subtree
         keep_nodes = t.nodes[(.!(in(st_nodes_i).(t.nodes)))]
         append!(keep_nodes,st_nodes_f)
@@ -235,15 +243,20 @@ module tf
                 append!(new_branches,j)
             end
         end
-        # println(t.a)
+        println("subtree = ",subtree)
+        for key in keys(subtree.a)
+            # if key in dict1.keys
+            t.a[key] = subtree.a[key]
+            t.b[key] = subtree.b[key]
+        end
+        newtree = Tree(keep_nodes,new_branches,new_leaves,t.a,t.b,Dict())
+        T = assign_class(X,t,e)
+        # println("-solving-",t.a,subtree.a)
         # append the right a,b,z values.
-        return Tree(keep_nodes,new_branches,new_leaves,t.a,t.b,t.z)
+        return T#Tree(keep_nodes,new_branches,new_leaves,t.a,t.b,t.z)
     end
 
-
-
-
-    function subtree_inputs(Tt::Tree,x,y)
+    function subtree_inputs(Tt,x,y)
         Y = y_mat(y)
         #returns a list of indices of observations contained in leaf nodes of subtree
         obs = []
