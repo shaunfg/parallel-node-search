@@ -39,6 +39,21 @@ module tf
 
     get_e(p) = 1*Matrix(I,p,p)
 
+    function get_children(node::Int,T)
+        #cascade observation down the split
+        kids = []
+        println(node)
+        if node in T.branches
+            append!(kids,tf.left_child(node::Int,T))
+            append!(kids,get_children(tf.left_child(node::Int,T),T))
+            append!(kids,tf.right_child(node::Int,T))
+            append!(kids,get_children(tf.right_child(node::Int,T),T))
+        else
+            append!(kids,node)
+        end
+        return(unique(kids)) # TODO FIX LATER
+    end
+
     function _branch_constraint(obj,node,t,e)
         append!(t.nodes,node)
         if typeof(obj) != Leaf{String} #if the node is a branch get the branching constraints
