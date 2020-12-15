@@ -18,8 +18,9 @@ module tf
     using CategoricalArrays
 
     function copy(Told)
-        Tnew = Tree(Told.nodes,Told.branches,Told.leaves,Told.a,
-                    Told.b,Told.z)
+        Tnew = Tree(deepcopy(Told.nodes),deepcopy(Told.branches),
+                    deepcopy(Told.leaves),deepcopy(Told.a),
+                    deepcopy(Told.b),deepcopy(Told.z))
         return Tnew
     end
 
@@ -39,15 +40,24 @@ module tf
 
     get_e(p) = 1*Matrix(I,p,p)
 
+
     function get_children(node::Int,T)
+        kids = _recurse_children(node::Int,T)
+        if length(kids) == 1
+            return
+        else
+            return kids
+        end
+    end
+    function _recurse_children(node::Int,T)
         #cascade observation down the split
         kids = []
-        println(node)
+
         if node in T.branches
-            append!(kids,tf.left_child(node::Int,T))
-            append!(kids,get_children(tf.left_child(node::Int,T),T))
-            append!(kids,tf.right_child(node::Int,T))
-            append!(kids,get_children(tf.right_child(node::Int,T),T))
+            append!(kids,left_child(node::Int,T))
+            append!(kids,_recurse_children(left_child(node::Int,T),T))
+            append!(kids,right_child(node::Int,T))
+            append!(kids,_recurse_children(right_child(node::Int,T),T))
         else
             append!(kids,node)
         end
@@ -258,7 +268,7 @@ module tf
                 append!(new_branches,j)
             end
         end
-        println("subtree = ",subtree)
+        # println("subtree = ",subtree)
         for key in keys(subtree.a)
             # if key in dict1.keys
             t.a[key] = subtree.a[key]
