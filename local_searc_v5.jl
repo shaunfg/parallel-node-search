@@ -17,16 +17,14 @@ seed = 100
 dt = fit(UnitRangeTransform, x, dims=1)
 X = StatsBase.transform(dt,x)
 
+
+println("##############################")
+println("### Local Search Algorithm ###")
+println("##############################")
 T= tf.warm_start(tdepth,y,X,seed)
 starting_loss = loss(T,y)
 tol = 10
 iter = 0
-println("
-##############################
-### Local Search Algorithm ###
-##############################
-")
-
 while tol >1e-5
     global iter +=1
 # for i =1:1
@@ -34,51 +32,22 @@ while tol >1e-5
     # println("current $i")
     Lprev = loss(T,y)
     local Lcur
-    local shuffled_t = T.nodes #shuffle(T.nodes)
-    # println("NODES", T.nodes)
-    # println("shuffled_t",shuffled_t)
+    local shuffled_t = shuffle(T.nodes)
     for t in shuffled_t
-        # println("Testing node $t")
-    # for t in [1]
         global T
-        # println(T.branches)
-        # println(T.b)
         local Tt = tf.create_subtree(t,T)
         # print(Tt.z)
         local indices = tf.subtree_inputs(Tt,X,y)
         # println(indices)
         if !isempty(indices)
-            # println("----- Tree before",Tt)
-            # println("bsss",T.b)
-            # println("--- Nodes = $(T.nodes)")
-            # println("--- Leaves = $(T.leaves)")
-            # println("--- Branches = $(T.branches)")
-            global Ttnew = optimize_node_parallel(Tt,indices,X,y,T)
-            # println(Ttnew)
-            # println("--------------", Ttnew)
-            # if Ttnew != false
-            # printl
-            # println("supposed replacement",Ttnew)
-            # println("\nMAIN: Prior to replacing Tree")
-            # println("--- Nodes = $(T.nodes)")
-            # println("--- Branches = $(T.branches)")
-            # println("--- Leaves = $(T.leaves)")
-            global T = replace_subtree(T,Ttnew,X;print_prog=true)
-            # println("\nMAIN: Post to replacing Tree")
-            # println("--- Nodes = $(T.nodes)")
-            # println("--- Branches = $(T.branches)")
-            # println("--- Leaves = $(T.leaves)")
-            # println("verify", Ttnew.nodes == Tt.nodes)
-            # global priorT = tf.copy(T)
-            # if Ttnew.nodes != Tt.nodes
-            #     global replacement  = Ttnew
-            #     println("Perfoming Replacment")
-            # end
+            # global priorT = T
+            # println("prior T",T.branches)
+            local Ttnew, better_found = optimize_node_parallel(Tt,indices,X,y,T)
+            if better_found ==true
+                global T = replace_subtree(T,Ttnew,X;print_prog=true)
+            end
+            # println("post T",T.branches)
 
-            # println("NODES", T)
-            # println("NEW B",T.b)
-            # end
-            # println("newtree",T)
             Lcur = loss(T,y)
             println("Lprev $Lprev, Lcur $Lcur")
             global tol = abs(Lprev - Lcur)
@@ -112,6 +81,7 @@ function replace_subtree(T_full,subtree,X; print_prog = false)#::Tree,subtree::T
             T.z[point] = parent
             T.z[point] = parent
         end
+        print
     else #
         parent = minimum(subtree.nodes)
         if print_prog == true
@@ -333,10 +303,7 @@ function optimize_node_parallel(Tt,indices,X,y,T)
     # end
     # println("Tt after",Tt.z)
     # println("After",Tt)
-    if better_split_found == true
-        return(Tt)
-    else
-        return(T)
+    return(Tt,better_split_found)
     end
 end
 
@@ -424,12 +391,12 @@ if test != false
 end
 
 
-T= tf.warm_start(4,y,X,seed)
+T= tf.warm_start(2,y,X,seed)
 loss(T,y)
 # Tt = tf.create_subtree(3,T)
-Tt = tf.create_subtree(7,T)
+Tt = tf.create_subtree(2,T)
 # indices = tf.subtree_inputs(Tt,X,y)
-Ttnew = optimize_node_parallel(T,indices,X,y)
+Ttnew = optimize_node_parallel(Tt,indices,X,y,T)
 #
 # T_old = tf.Tree(Any[1, 2,3,6,7,12,13,14,15,28,29],
 #                 Any[1,3,6,7,14],
