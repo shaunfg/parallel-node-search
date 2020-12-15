@@ -20,9 +20,17 @@ X = StatsBase.transform(dt,x)
 T= tf.warm_start(tdepth,y,X,seed)
 starting_loss = loss(T,y)
 tol = 10
+iter = 0
+println("
+##############################
+### Local Search Algorithm ###
+##############################
+")
+
 while tol >1e-5
+    global iter +=1
 # for i =1:1
-    println("------------- NEW RUN ----------------")
+    println("------------- Iteration # $iter ----------------")
     # println("current $i")
     Lprev = loss(T,y)
     local Lcur
@@ -30,7 +38,7 @@ while tol >1e-5
     # println("NODES", T.nodes)
     # println("shuffled_t",shuffled_t)
     for t in shuffled_t
-        println("Testing node $t")
+        # println("Testing node $t")
     # for t in [1]
         global T
         # println(T.branches)
@@ -55,7 +63,7 @@ while tol >1e-5
             # println("--- Nodes = $(T.nodes)")
             # println("--- Branches = $(T.branches)")
             # println("--- Leaves = $(T.leaves)")
-            global T = replace_subtree(T,Ttnew,X)
+            global T = replace_subtree(T,Ttnew,X;print_prog=true)
             # println("\nMAIN: Post to replacing Tree")
             # println("--- Nodes = $(T.nodes)")
             # println("--- Branches = $(T.branches)")
@@ -76,16 +84,17 @@ while tol >1e-5
             global tol = abs(Lprev - Lcur)
         end
     end
-    println("Tolerance = $tol, Error = $Lprev, starting error = $starting_loss")
+    println("Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
 end
 
-function replace_subtree(T_full,subtree,X)#::Tree,subtree::Tree
+function replace_subtree(T_full,subtree,X; print_prog = false)#::Tree,subtree::Tree
     local T = tf.copy(T_full)
     if length(subtree.nodes) == 1 #
         kid = minimum(subtree.nodes)
         parent = tf.get_parent(kid)
-        println("replacement - leaf $kid --> $parent")
-
+        if print_prog == true
+            println("replacement - leaf $kid --> $parent")
+        end
         children = tf.get_children(parent,T)
         # println("children",children)
         delete!(T.a,parent) # removed parent from branch
@@ -104,8 +113,10 @@ function replace_subtree(T_full,subtree,X)#::Tree,subtree::Tree
             T.z[point] = parent
         end
     else #
-        println("replacement - branch")
         parent = minimum(subtree.nodes)
+        if print_prog == true
+            println("replacement - branch $parent")
+        end
         lower = parent *2
         upper = parent *2 + 1
         # println("parernt",parent)
@@ -239,13 +250,13 @@ function optimize_node_parallel(Tt,indices,X,y,T)
     better_split_found = false
 
     error_best = loss(Tt,y)
-    println("---------$root-----------")
-    println(length(indices))
+    println("(Node $root)")
+    # println(length(indices))
     # println("Error :",error_best)
     if root in Tt.branches #if the subtree is a branch of the full tree get its children
         println("Optimize-Node-Parallel : Subtree split")
         Tnew = tf.create_subtree(root,Tt)
-        println(Tnew)
+        # println(Tnew)
         Tl = tf.left_child(root,Tt)
         Tu = tf.right_child(root,Tt)
         Tlower_sub = tf.create_subtree(Tl,Tt)
@@ -278,18 +289,17 @@ function optimize_node_parallel(Tt,indices,X,y,T)
         Tlower = replace_subtree(Tnew,Tlower_sub,X)
         Tupper = replace_subtree(Tnew,Tupper_sub,X)
     end
-    println("last chcke?",length(Tlower.z),"   ",length(Tnew.z))
+    # println("last chcke?",length(Tlower.z),"   ",length(Tnew.z))
 
     # Uses Tnew to find best splits to add for the old tree
     Tpara, error_para = best_parallelsplit(root,XI,YI,Tnew,e,indices,X,y)
 
     # end
     # println(Tpara)
-    println("Errorbest before",error_best)
+    # println("Errorbest before",error_best)
     if error_para < error_best
-        println("Better Split Found : parallel")
-        println("Better Split Found : parallel")
-        println("---Error : $error_best => $error_para")
+        println("!! Better Split Found : parallel")
+        println("-->Error : $error_best => $error_para")
         Tt,error_best = Tpara,error_para
         better_split_found = true
     end
@@ -297,9 +307,8 @@ function optimize_node_parallel(Tt,indices,X,y,T)
     # if length(tf.subtree_inputs(Tlower,X,y)) > 0
     error_lower = loss(Tlower,y)
     if error_lower < error_best
-        println("Better Split Found : lower")
-        println("Better Split Found : lower")
-        println("---Error : $error_best => $error_lower")
+        println("!! Better Split Found : lower")
+        println("-->Error : $error_best => $error_lower")
         Tt,error_best = Tlower,error_lower
         better_split_found = true
 
@@ -311,16 +320,15 @@ function optimize_node_parallel(Tt,indices,X,y,T)
     # println("Tt before",Tt.z)
     # if length(tf.subtree_inputs(Tupper,X,y)) > 0
     if error_upper < error_best
-        println("Better Split Found : upper")
-        println("Better Split Found : upper")
-        println("---Error : $error_best => $error_upper")
+        println("!! Better Split Found : upper")
+        println("-->Error : $error_best => $error_upper")
         Tt,error_best = Tupper,error_upper
         better_split_found = true
 
         # delete!(Tt.a,root)
         # delete!(Tt.b,root)
     end
-    println("Errorbest after",error_best)
+    # println("Errorbe/st after",error_best)
 
     # end
     # println("Tt after",Tt.z)
