@@ -9,9 +9,9 @@ y = Vector(iris[:,5])
 
 #-------------
 
-T_output = LocalSearch(x,y,tdepth;seed = 100,tol = 10)
+T_output = LocalSearch(x,y,2;seed = 100)
 
-function LocalSearch(x,y,tdepth;seed = 100,tol = 10)
+function LocalSearch(x,y,tdepth;seed = 100,tol_limit = 1e-5)
     println("##############################")
     println("### Local Search Algorithm ###")
     println("##############################")
@@ -22,8 +22,9 @@ function LocalSearch(x,y,tdepth;seed = 100,tol = 10)
     e = tf.get_e(size(x,2))
     T= tf.warm_start(tdepth,y,X,seed)
     starting_loss = loss(T,y)
+    tol = 10
     local iter = 0
-    while tol >1e-5
+    while tol > tol_limit
         iter +=1
         println("------------- Iteration # $iter ----------------")
         Lprev = loss(T,y)
@@ -138,7 +139,7 @@ function new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5)
     Tpara.b[root] = new_values[2]
     filter!(x->x≠root, Tpara.leaves)
 
-    Tfeas = tf.assign_class(X,Tpara,e;indices = indices)
+    Tpara = tf.assign_class(X,Tpara,e;indices = indices)
     return Tpara
 end
 
@@ -214,7 +215,9 @@ function _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5)
     error_best = Inf
     Tttry = tf.copy(Tt)
     filter!(x->x≠root, Tttry.leaves)
-
+    better_split_found = false
+    # local new_values = [1,0.5]
+    # local error_best = loss(Tt,y)
     local new_values, error_best
     for j in 1:p, i in 1:n-1
         values = sort(XI[:,j])
@@ -227,12 +230,89 @@ function _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5)
         if tf.minleafsize(Tttry) >= Nmin && error < error_best && true == true
             error_best = error
             new_values = [j,bsplit]
+            better_split_found = true
         end
     end
-    return(new_values,error_best)
+    if better_split_found == true
+        return(new_values,error_best)
+    else
+        return([1,0.5],loss(Tt,y))
+    end
 end
 
 #---- Testing
+
+using Test
+
+@test 1 == 2
+
+function run_tests()
+    dt = fit(UnitRangeTransform, x, dims=1)
+    X = StatsBase.transform(dt,x)
+    e = tf.get_e(size(X,2))
+    T = tf.warm_start(10,y,X,100)
+    T = tf.assign_class(X,T,e)
+    test_tree(T)
+    for node in T.nodes
+        println("node $node")
+        Tt = tf.create_subtree(node,T)
+        test_tree(Tt)
+
+    end
+    # T = tf.warm_start(2,y,x,100)
+
+end
+
+run_tests()
+
+dt = fit(UnitRangeTransform, x, dims=1)
+X = StatsBase.transform(dt,x)
+e = tf.get_e(size(X,2))
+# T = tf.Tree(Any[1,2,3,6,7,12,13,14,15,28,29],
+#                 Any[1,3,6,7,14],
+#                 Any[2, 12, 13,15,28,29],
+#                 Dict{Any,Any}(6=> 2,3 => 4,1 => 3,7=>1,14 =>1),
+#                 Dict{Any,Any}(6 => 0.5,3 => 0.6458,1 => 0.245,7=>0.5,14 =>0.5),
+#                 Dict())
+# T = tf.assign_class(X,T,e)
+#
+# tf.create_subtree(29,T)
+
+T = tf.warm_start(10,y,x,100)
+
+Tt = tf.create_subtree(3,T)
+
+test_tree(replace_subtree(T,Tt,X))
+indices = tf.subtree_inputs(Tt,x,y)
+Ttnew,bs = optimize_node_parallel(Tt,indices,x,y,T,tf.get_e(size(x,2)))
+
+test_tree(Ttnew)
+
+function test_tree(T)
+    @test T.leaves ⊆ T.nodes
+    @test T.branches ⊆ T.nodes
+    @test vcat(T.leaves,T.branches) ⊆ T.nodes
+    @test T.nodes ⊆ vcat(T.leaves,T.branches)
+    @test unique(values(T.z)) ⊆ T.leaves
+    @test unique(values(T.z)) ⊈ T.branches
+    @test keys(T.b) ⊆ T.branches
+    @test keys(T.a) ⊆ T.branches
+    if isempty(T.a) == false
+        @test keys(T.a) ⊈ T.leaves
+        @test keys(T.b) ⊈ T.leaves
+    end
+    @test isempty(T.z) == false
+end
+
+test_tree(T)
+
+function test_replace_subtree(T_new,T_old)
+    test_tree(T_new)
+    test_tree(T_old)
+end
+
+test_replace_subtree()
+
 root = 2
 indices_test = tf.subtree_inputs(Tt_test,x,y)
 XI_test = X[indices_test,:]
@@ -274,10 +354,11 @@ end
 
 
 T= tf.warm_start(2,y,X,seed)
+T= tf.warm_start(2,y,x,100)
 loss(T,y)
 # Tt = tf.create_subtree(3,T)
 Tt = tf.create_subtree(2,T)
-# indices = tf.subtree_inputs(Tt,X,y)
+indices = tf.subtree_inputs(Tt,X,y)
 Ttnew = optimize_node_parallel(Tt,indices,X,y,T)
 #
 # T_old = tf.Tree(Any[1, 2,3,6,7,12,13,14,15,28,29],
