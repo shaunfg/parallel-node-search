@@ -9,9 +9,9 @@ y = Vector(iris[:,5])
 
 #-------------
 
-T_output = LocalSearch(x,y,tdepth;seed = 100,tol = 10)
+T_output = LocalSearch(x,y,3;seed = 100)
 
-function LocalSearch(x,y,tdepth;seed = 100,tol = 10)
+function LocalSearch(x,y,tdepth;seed = 100,tol_limit = 1e-5)
     println("##############################")
     println("### Local Search Algorithm ###")
     println("##############################")
@@ -22,8 +22,9 @@ function LocalSearch(x,y,tdepth;seed = 100,tol = 10)
     e = tf.get_e(size(x,2))
     T= tf.warm_start(tdepth,y,X,seed)
     starting_loss = loss(T,y)
+    tol = 10
     local iter = 0
-    while tol >1e-5
+    while tol > tol_limit
         iter +=1
         println("------------- Iteration # $iter ----------------")
         Lprev = loss(T,y)
