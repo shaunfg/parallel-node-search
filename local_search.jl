@@ -1,5 +1,5 @@
 using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
-cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
+# cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
 cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
 
 include("tree.jl")
@@ -35,7 +35,7 @@ end
 trees = threaded_restarts!(x,y,nrestarts;warmup=400)
 
 
-T_output = LocalSearch(x,y,2,400)
+T_output = LocalSearch(x,y,2,100)
 
 function LocalSearch(x,y,tdepth,seed;tol_limit = 1)
     println("##############################")
@@ -47,6 +47,7 @@ function LocalSearch(x,y,tdepth,seed;tol_limit = 1)
     X = StatsBase.transform(dt,x)
     e = tf.get_e(size(x,2))
     local T = tf.warm_start(tdepth,y,X,seed)
+    # global initial_Tree = T
     starting_loss = loss(T,y)
     tol = 10
     local iter = 0
@@ -118,6 +119,9 @@ function replace_lower_upper(T_full,subtree,X; print_prog = false)#::Tree,subtre
             T.z[point] = parent
         end
     else
+        if print_prog == true
+            println("replacement - subtree")
+        end
         subtree_parent = minimum(subtree.nodes) #7
         tree_parent = tf.get_parent(subtree_parent)#minimum(T.nodes) #3
         children = tf.get_children(tree_parent,T) #3 onwards
@@ -132,18 +136,22 @@ function replace_lower_upper(T_full,subtree,X; print_prog = false)#::Tree,subtre
         new_branches = [CD(node) for node in subtree.branches]
         new_leaves = [CD(node) for node in subtree.leaves]
 
-        # println("get children",subtree.nodes)
-        # println(calculate_destination(tree_parent,subtree_parent,subtree.nodes))
+        # # println("get children",subtree.nodes)
+        # # println(calculate_destination(tree_parent,subtree_parent,subtree.nodes))
         append!(T.nodes, new_nodes)
         append!(T.branches, new_branches)
         append!(T.leaves, new_leaves)
-        # println(T.nodes)
-        # test_tree(T)
+        # # println(T.nodes)
+        # # test_tree(T)
+        # println(T)
         for key in keys(subtree.a)
             T.a[CD(key)] = subtree.a[key]
             T.b[CD(key)] = subtree.b[key]
         end
-        # println(T)
+        filter!(p -> p.first ∉ T.leaves, T.a)
+        filter!(p -> p.first ∉ T.leaves, T.b)
+        println(T)
+        # global T_check = T
         e = tf.get_e(size(X,2))
         T = tf.assign_class(X,T,e)
     end
@@ -239,7 +247,13 @@ function _get_baseline(Y)
     return error
 end
 
-
+#
+# for key in keys(subtrees)
+#     println("key",key)
+#     test_tree(subtrees[key])
+#     ttt = replace_lower_upper(Tnew,subtrees[key],X)
+#     test_tree(ttt)
+# end
 #--- Optimize Node Parallel
 # Input: Subtree T to optimize, training data X,y
 # Output: Subtree T with optimized parallel split at root
@@ -248,7 +262,7 @@ function optimize_node_parallel(Tt,indices,X,y,T,e)
     XI = X[indices,:]
     YI = Y[indices,:]
     root = minimum(Tt.nodes)
-    Tnew = Tt
+    # global Tnew = Tt
     Tbest = Tt
 
     better_split_found = false
@@ -260,8 +274,6 @@ function optimize_node_parallel(Tt,indices,X,y,T,e)
         # println("Tt     $Tt")
         Tnew = tf.create_subtree(root,Tt)
         # println("New tree $Tnew")
-        Tlower_sub = tf.create_subtree(tf.left_child(root,Tt),Tt)
-        Tupper_sub = tf.create_subtree(tf.right_child(root,Tt),Tt)
     else
         println("Optimize-Node-Parallel : Leaf split")
         Tnew  = new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5)
@@ -269,16 +281,18 @@ function optimize_node_parallel(Tt,indices,X,y,T,e)
         if Tnew == false
             return (Tt,false)
         end
-        Tlower_sub = tf.create_subtree(tf.left_child(root,Tnew),Tnew)
-        Tupper_sub = tf.create_subtree(tf.right_child(root,Tnew),Tnew)
+
+        subtrees = Dict()
+        subtrees[tf.left_child(root,Tnew)] = tf.create_subtree(tf.left_child(root,Tnew),Tnew)
+        subtrees[tf.left_child(root,Tnew)] = tf.create_subtree(tf.right_child(root,Tnew),Tnew)
     end
-    Tlower = replace_lower_upper(Tnew,Tlower_sub,X)
-    Tupper = replace_lower_upper(Tnew,Tupper_sub,X)
+    # Tlower = replace_lower_upper(Tnew,Tlower_sub,X)
+    # Tupper = replace_lower_upper(Tnew,Tupper_sub,X)
     Tpara, error_para = best_parallelsplit(root,XI,YI,Tnew,e,indices,X,y)
 
-    # println("Para tree $Tpara")
-    error_lower = loss(Tlower,y)
-    error_upper = loss(Tupper,y)
+    # # println("Para tree $Tpara")
+    # error_lower = loss(Tlower,y)
+    # error_upper = loss(Tupper,y)
 
     if error_para < error_best
         println("!! Better Split Found : subtree")
@@ -287,20 +301,41 @@ function optimize_node_parallel(Tt,indices,X,y,T,e)
         better_split_found = true
     end
 
-    if error_lower < error_best
-        println("!! Better Split Found : lower")
-        println("-->Error : $error_best => $error_lower")
-        Tt,error_best = Tlower,error_lower
-        better_split_found = true
+    # Thread: Find optimal deeper subtree
+    subtree_nodes = tf.get_children(root,Tnew)
+    total_subtrees = length(subtree_nodes)
+    numthreads = Threads.nthreads()-4
+    subtrees_per_thread = Int(floor(total_subtrees/numthreads))
+    nremaining_subtrees = total_subtrees-subtrees_per_thread*numthreads
+
+    global subtrees = Dict()
+    Tdeep = Dict()
+    global error_deep = Dict()
+
+    println("subtrees per thread: ",subtrees_per_thread)
+    println("nremaining_subtrees: ",nremaining_subtrees)
+
+
+    Threads.@threads for i in 1:numthreads
+        #get all possible children subtrees
+        #println("Threads: ", i, ": ",subtree_nodes)
+        for st_nodes in subtree_nodes[1+subtrees_per_thread*(i-1):i*subtrees_per_thread]
+            subtrees[st_nodes] = tf.create_subtree(st_nodes,Tnew)
+            Tdeep[st_nodes] = replace_lower_upper(Tnew,subtrees[st_nodes],X)
+            error_deep[st_nodes] = loss(Tdeep[st_nodes],y)
+            if error_deep[st_nodes] < error_best
+                println("!! Better Split Found : lower")
+                println("-->Error : $error_best => $error_deep")
+                Tt,error_best = Tdeep[st_nodes],error_deep[st_nodes]
+                better_split_found = true
+            end
+        end
+
+        if i <= nremaining_subtrees
+            subtrees[st_nodes] = tf.create_subtree(subtree_nodes[subtrees_per_thread*numthreads+i],Tnew)
+        end
     end
 
-    if error_upper < error_best
-        println("!! Better Split Found : upper")
-        println("-->Error : $error_best => $error_upper")
-        Tt,error_best = Tupper,error_upper
-        better_split_found = true
-
-    end
     return(Tt,better_split_found)
 end
 
@@ -380,6 +415,25 @@ end
 #---- Testing
 
 using Test
+function test_tree(T)
+    @test T.leaves ⊆ T.nodes
+    @test T.branches ⊆ T.nodes
+    @test vcat(T.leaves,T.branches) ⊆ T.nodes
+    @test T.nodes ⊆ vcat(T.leaves,T.branches)
+    @test unique(values(T.z)) ⊆ T.leaves
+    @test T.leaves ⊆ unique(values(T.z))
+    @test unique(values(T.z)) ⊈ T.branches
+    @test keys(T.b) ⊆ T.branches
+    @test keys(T.a) ⊆ T.branches
+    @test length(T.nodes) == length(unique(T.nodes))
+    @test length(T.leaves) == length(unique(T.leaves))
+    @test length(T.branches) == length(unique(T.branches))
+    if isempty(T.a) == false
+        @test keys(T.a) ⊈ T.leaves
+        @test keys(T.b) ⊈ T.leaves
+    end
+    @test isempty(T.z) == false
+end
 
 @test 1 ==  1
 
@@ -425,25 +479,7 @@ Ttnew,bs = optimize_node_parallel(Tt,indices,x,y,T,tf.get_e(size(x,2)))
 
 test_tree(Ttnew)
 
-function test_tree(T)
-    @test T.leaves ⊆ T.nodes
-    @test T.branches ⊆ T.nodes
-    @test vcat(T.leaves,T.branches) ⊆ T.nodes
-    @test T.nodes ⊆ vcat(T.leaves,T.branches)
-    @test unique(values(T.z)) ⊆ T.leaves
-    @test T.leaves ⊆ unique(values(T.z))
-    @test unique(values(T.z)) ⊈ T.branches
-    @test keys(T.b) ⊆ T.branches
-    @test keys(T.a) ⊆ T.branches
-    @test length(T.nodes) == length(unique(T.nodes))
-    @test length(T.leaves) == length(unique(T.leaves))
-    @test length(T.branches) == length(unique(T.branches))
-    if isempty(T.a) == false
-        @test keys(T.a) ⊈ T.leaves
-        @test keys(T.b) ⊈ T.leaves
-    end
-    @test isempty(T.z) == false
-end
+
 
 test_tree(T)
 
