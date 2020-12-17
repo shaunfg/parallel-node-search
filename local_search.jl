@@ -1,16 +1,28 @@
 using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
 cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
 # cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
-
-
 include("tree.jl")
+
+
 
 iris_full = CSV.read("iris.csv",DataFrame)
 iris = iris_full[randperm(size(iris_full,1)),:]
 x = Matrix(iris[:,1:4])
 y = Vector(iris[:,5])
+#---------------
+lend_full = CSV.read("../lending-club/lend_training_70.csv",DataFrame)
+lend = lend_full[randperm(size(lend_full,1)),:][1:500,:]
+x = Matrix(select(lend,Not(:loan_status)))
+y = Vector(lend[:,:loan_status])
+#----- Profiling
+using Profile
+@profile LocalSearch(x,y,2,400,α=0.001)
+Juno.profiler()
 
 #-------------
+T_output = LocalSearch(x,y,2,400,α=0.01)
+
+trees = threaded_restarts!(x,y,nrestarts;warmup=400)
 ncores = length(Sys.cpu_info());
 Threads.nthreads()
 
@@ -33,9 +45,7 @@ function threaded_restarts!(x,y,nrestarts;warmup=400)
     end
     return(output_tree)
 end
-trees = threaded_restarts!(x,y,nrestarts;warmup=400)
 
-T_output = LocalSearch(x,y,2,400,α=0.001)
 
 function LocalSearch(x,y,tdepth,seed;tol_limit = 1,α=0.01)
     println("##############################")
@@ -47,6 +57,7 @@ function LocalSearch(x,y,tdepth,seed;tol_limit = 1,α=0.01)
     X = StatsBase.transform(dt,x)
     e = tf.get_e(size(x,2))
     local T = tf.warm_start(tdepth,y,X,seed)
+    global starting_tree = T
     starting_loss = loss(T,y,α)
     tol = 10
     local iter = 0
@@ -139,6 +150,8 @@ function replace_lower_upper(T_full,subtree,X; print_prog = false)#::Tree,subtre
             T.a[CD(key)] = subtree.a[key]
             T.b[CD(key)] = subtree.b[key]
         end
+        filter!(p -> p.first ∉ T.leaves, T.a)
+        filter!(p -> p.first ∉ T.leaves, T.b)
         # println(T)
         e = tf.get_e(size(X,2))
         T = tf.assign_class(X,T,e)
@@ -216,10 +229,10 @@ function tune(dmax,x,y;nthreads = length(Sys.cpu_info()) -1 )
     return vars
 end
 
-a = rand(3,3)
-
-var_check = tune(5,x,y,nthreads=15)
-[[i,j] for (i,j) in zip([0.001, 0.01,3],[1,3,3])]
+# a = rand(3,3)
+#
+# var_check = tune(5,x,y,nthreads=15)
+# [[i,j] for (i,j) in zip([0.001, 0.01,3],[1,3,3])]
 #-----
 function loss(T,y,α)
     Y_full = tf.y_mat(y)
@@ -235,7 +248,6 @@ function loss(T,y,α)
     # println("L = $(L/L̂), C = $(α*C)")
     # return (L) #so that it not so small for now
     return (L/L̂*1 + α*C) #so that it not so small for now
-    # return(L + α*C*L̂)
 end
 
 # TODO Can reduce this as there are no more indices ... tecnically
@@ -265,9 +277,11 @@ function optimize_node_parallel(Tt,indices,X,y,T,e;α)
         println("Optimize-Node-Parallel : Branch split")
         # println("Tt     $Tt")
         Tnew = tf.create_subtree(root,Tt)
+        println("Timing Marker 5")
         # println("New tree $Tnew")
         Tlower_sub = tf.create_subtree(tf.left_child(root,Tt),Tt)
         Tupper_sub = tf.create_subtree(tf.right_child(root,Tt),Tt)
+        println("Timing Marker 4")
     else
         println("Optimize-Node-Parallel : Leaf split")
         Tnew  = new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5,α=α)
@@ -278,13 +292,16 @@ function optimize_node_parallel(Tt,indices,X,y,T,e;α)
         Tlower_sub = tf.create_subtree(tf.left_child(root,Tnew),Tnew)
         Tupper_sub = tf.create_subtree(tf.right_child(root,Tnew),Tnew)
     end
+    println("Timing Marker 1")
     Tlower = replace_lower_upper(Tnew,Tlower_sub,X)
+    println("Timing Marker 2")
     Tupper = replace_lower_upper(Tnew,Tupper_sub,X)
     Tpara, error_para = best_parallelsplit(root,XI,YI,Tnew,e,indices,X,y,α=α)
 
     # println("Para tree $Tpara")
     error_lower = loss(Tlower,y,α)
     error_upper = loss(Tupper,y,α)
+    println("Timing Marker 3")
 
     if error_para < error_best
         println("!! Better Split Found : subtree")

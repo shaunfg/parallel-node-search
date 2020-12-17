@@ -89,6 +89,10 @@ testing = shuffled_useful[trainidx+1:end,:]
 CSV.write("../lending-club/lend_training_70.csv",training)
 CSV.write("../lending-club/lend_testing_30.csv",testing)
 
+y = final_df[:loan_status]
+
+
+tf.y_mat(y)
 using Test
 @test nrow(training)+ nrow(testing)== nrow(useful)
 # training = filter(row -> row.loan_status != "current",new_df)

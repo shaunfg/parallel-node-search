@@ -12,8 +12,8 @@ module tf
         z
     end
 
-    using Random, DecisionTree, LinearAlgebra, CategoricalArrays
-    import MLJBase.int
+    using Random, DecisionTree, LinearAlgebra#, CategoricalArrays
+    # import MLJBase.int
 
     get_e(p) = 1*Matrix(I,p,p)
     N_nodes(D::Int) = 2^(D+1) - 1
@@ -42,6 +42,14 @@ module tf
         T = assign_class(x,T,e) #fill the z matrix with classses
         return T
     end
+
+    function get_OCT(depth::Int)
+        nodes = collect(1:N_nodes(depth))
+        branches = collect(1:N_branch(depth))
+        leaves = collect(N_branch(depth)+1:N_nodes(depth))
+        return Tree(nodes,branches,leaves,Dict(),Dict(),Dict())
+    end
+
 
     function get_children(node::Int,T)
         ```
@@ -240,15 +248,12 @@ module tf
         ```
         Get y matrix as a matrix of categorical
         ```
-        n = length(y)
-        y_class = int(categorical(y),type=Int)
-        Y = zeros(n,length(unique(y_class)))
-        for i in 1:n, k in y_class
-            if y_class[i] == k
-                Y[i,k] = 1
-            end
+        y2 = deepcopy(y)
+        Y = zeros(length(y2),length(unique(y2)))
+        for (i,x) in enumerate(unique(y2))
+            Y[:,i] = (y.==x)*1
         end
-        return(Y)
+        return Y
     end
 
 
