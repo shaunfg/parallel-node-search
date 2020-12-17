@@ -10,6 +10,12 @@ iris_full = CSV.read("iris.csv",DataFrame)
 iris = iris_full[randperm(size(iris_full,1)),:]#[1:3,:]
 x = Matrix(iris[:,1:4])
 y = Vector(iris[:,5])
+#------
+lend_full = CSV.read("../lending-club/lend_training_70.csv",DataFrame)
+lend = lend_full[randperm(size(lend_full,1)),:][1:500,:]
+x = Matrix(select(lend,Not(:loan_status)))
+y = Vector(lend[:,:loan_status])
+Y = tf.y_mat(y)
 
 #----
 # heart = CSV.read("heart.csv")
@@ -18,38 +24,19 @@ y = Vector(iris[:,5])
 # y = Vector(heart[:,end])
 
 #----
-#Data pre-processing
-dt = fit(UnitRangeTransform, x, dims=1)
-x_copy = x
-x = StatsBase.transform(dt,x)
-#----
 n = size(x,1) # number of observations
 p = size(x,2) # number of features
 K = length(unique(y)) # number of labels k
 N_min = 5
-depth = 2
-α = 0.1
+depth = 5
+α = 0.01
 
 #----
-#Find the smallest difference between X's across all features
-# function epsilon(x)
-#     ϵj = []
-#     for j in 1:p
-#         min_diff = 1
-#         diff = 0
-#         for i in 1:n-1
-#             for ii in 2:n
-#                 diff = abs(x[ii,j] - x[i,j])
-#                 if (diff < min_diff) & (diff!= 0)
-#                     min_diff = diff
-#                     println(diff)
-#                 end
-#             end
-#         end
-#         append!(ϵj,min_diff)
-#     end
-#     return(ϵj)
-# end
+function _get_baseline(Y)
+    Nt = sum((Y),dims=1)
+    error = size(Y,1) - maximum(Nt)
+    return error
+end
 
 function epsilon(x)
     ϵj = []
@@ -70,20 +57,11 @@ function epsilon(x)
     return(ϵj)
 end
 
-ϵ = epsilon(x).-1e-4
+ϵ = epsilon(x)#.-1e-4
 ϵmin = minimum(ϵ)
 ϵmax = maximum(ϵ)
-#ϵ = 1e-4
 
-# ϵs = [minimum(abs.([x[i+1,j]-x[i,j] for i=1:size(x,1)-1 if x[i+1,j]!=x[i,j]]))
-#     for j=1:size(x,2)]
-
-# ϵ = 0.1
-# ϵmax = 0.1
-#ϵ = 0.09#minimum(ϵs)
-# ϵ = 1e-4
-
-tree = tf.get_tree(depth)
+tree = tf.get_OCT(2)
 
 model = Model(Gurobi.Optimizer)
 
@@ -117,29 +95,22 @@ model = Model(Gurobi.Optimizer)
 # parent_branching_constraints
 @constraint(model,[t=tree.branches],b[t]≤maximum(x)*d[t])
 
-# @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)], a[:,m]'*x[i,:] ≥ b[m]-(1+ϵmax)*(1-z[i,t]))
-# @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)], a[:,m]'*x[i,:].+ϵ <= b[m] + (1+ϵmax)*(1-z[i,t]))
-
-M = 1 # > maximum of x
-# @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)],
-#             sum(a[j,m]*x[i,j] for j=1:p) ≥ b[m]-(1-z[i,t])*M)
-# @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)],
-#          sum(a[j,m]*x[i,j] for j=1:p) + ϵmin ≤ b[m] + (M+ϵmax)*(1-z[i,t]))
-# @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)],
-#             sum(a[j,m]*x[i,j] for j=1:p) ≥ b[m]-(1-z[i,t])*M)
-# @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)],
-#             a[:,m]'*(x[i,:].+ϵ.- ϵmin) + ϵmin ≤ b[m] + (1+ϵmax)*(1-z[i,t]))
+M = 2 # > maximum of x
 @constraint(model,[i=1:n,t=tree.leaves,m=tf.R(t)],
             a[:,m]'*x[i,:] ≥ b[m]-(1-z[i,t])*M)
 @constraint(model,[i=1:n,t=tree.leaves,m=tf.L(t)],
             a[:,m]'*(x[i,:].+ϵ.-ϵmin)+ϵmin ≤ b[m] + (1+ϵmax)*(1-z[i,t]))
 
 
-L_baseline = 100
-@objective(model, Min, sum(Lt) + α*sum(d))
+
+
+L_baseline = _get_baseline(Y)
+@objective(model, Min, sum(Lt)/L_baseline + α*sum(d))
 
 optimize!(model)
+
 getobjectivevalue(model)
+
 value.(Lt)
 value.(a)
 value.(b)
@@ -149,24 +120,3 @@ value.(d)
 value.(c) # prediction label of each node
 value.(l) # =1 if node leaf t contains any points
 value.(z) # points in leaf node t
-
-maximum(x)
-
-#reconstruct b
-dt = fit(UnitRangeTransform, x_copy[:,4], dims=1)
-b_scaled = StatsBase.reconstruct!(dt,value.(b))
-
-# count = 0
-# values = []
-# for i=1:n
-#     for t in tree.leaves
-#         for m in tf.R(t)
-#             println([m])
-#             # println([i,t,m])
-#             append!(values,[[i,t,m]])
-#             global count +=1
-#         end
-#     end
-# end
-# values
-# count
