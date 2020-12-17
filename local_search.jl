@@ -1,5 +1,7 @@
 using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
 cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
+cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
+
 include("tree.jl")
 
 iris_full = CSV.read("iris.csv",DataFrame)
@@ -8,10 +10,34 @@ x = Matrix(iris[:,1:4])
 y = Vector(iris[:,5])
 
 #-------------
+ncores = length(Sys.cpu_info());
+Threads.nthreads()
 
-T_output = LocalSearch(x,y,2;seed= 100)
+#parallelize random restarts
+nrestarts = 8
+function threaded_restarts!(x,y,nrestarts;warmup=400)
+    numthreads = Threads.nthreads()-4
+    restarts_per_thread = Int(nrestarts/numthreads)
+    seed_values = 100:100:100*nrestarts
+    output_tree = Dict()
+    #we need to perform the calculations separately on remaining columns when there are remainder columns
+    Threads.@threads for i in 1:numthreads
+        indices = 1+(i-1)*restarts_per_thread:restarts_per_thread*i
+        for j in indices
+            seed = seed_values[j]
+            println(seed)
+            Tree = LocalSearch(x,y,2,seed)
+            output_tree[j] = Tree
+        end
+    end
+    return(output_tree)
+end
+trees = threaded_restarts!(x,y,nrestarts;warmup=400)
 
-function LocalSearch(x,y,tdepth;seed = 100,tol_limit = 1)
+
+T_output = LocalSearch(x,y,2,400)
+
+function LocalSearch(x,y,tdepth,seed;tol_limit = 1)
     println("##############################")
     println("### Local Search Algorithm ###")
     println("##############################")
@@ -304,7 +330,7 @@ function best_parallelsplit(root,XI,YI,Tt,e,indices,X,y;Nmin=5)
     #println("test- in parallel split")
     new_values, error_best = _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5)
     if new_values == false # no feasible split found
-        return Tt
+        return (Tt, loss(Tt,y))
     else
         Tpara = tf.copy(Tt)
         Tpara.a[root] = Int(new_values[1])
