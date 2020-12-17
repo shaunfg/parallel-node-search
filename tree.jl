@@ -162,7 +162,7 @@ module tf
             i = [k for (k,v) in T.z if v==t]
             z_mat[i,t] .= 1
             Nt[t] = sum(z_mat[:,t])
-            if (Nt[t] > 0) & (Nt[t] < minbucket)
+            if (Nt[t] < minbucket)
                 minbucket = Nt[t]
             end
         end
