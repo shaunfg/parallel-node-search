@@ -117,12 +117,32 @@ module tf
         else
             N = indices
         end
-        #for each observation, find leaf and assign class
-        for i in N
-            # node = 1
-            node = minimum(T.nodes)
-            _cascade_down(node,X,i,T,e)
+
+        ## threaded
+        numthreads = Threads.nthreads()-4
+
+        obs_per_thread = Int(floor(N/numthreads))
+        remaining_obs = N-obs_per_thread*numthreads
+        node = minimum(T.nodes)
+
+        Threads.@threads for thread in 1:Threads.nthreads()
+            @inbounds begin
+                for i in N[1+(thread-1)*obs_per_thread:obs_per_thread*thread]
+                    _cascade_down(node,X,i,T,e)
+                    println("thread: ",thread,", obs: ",i)
+                end
+
+                if thread <= remaining_obs
+                    _cascade_down(node,X,N[thread+obs_per_thread*numthreads],T,e)
+                end
+            end
         end
+        # #for each observation, find leaf and assign class
+        # for i in N
+        #     # node = 1
+        #     node = minimum(T.nodes)
+        #     _cascade_down(node,X,i,T,e)
+        # end
         return T
     end
 

@@ -1,56 +1,21 @@
 using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
-using Profile, BenchmarkTools
 cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
-# cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
+cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
+
 include("tree.jl")
-
-function splitobs(x,y,pct_train)
-    xtrain = x[1:Int(floor(pct_train*size(x)[1])),:]
-    xvalid = x[Int(floor(pct_train*size(x)[1]))+1:end,:]
-    ytrain = y[1:Int(floor(pct_train*size(x)[1]))]
-    yvalid = y[Int(floor(pct_train*size(x)[1]))+1:end]
-    return(xtrain,xvalid,ytrain,yvalid)
-end
-
-# df = df[shuffle(1:size(df, 1)),:]
 
 iris_full = CSV.read("iris.csv",DataFrame)
 iris = iris_full[randperm(size(iris_full,1)),:]
 x = Matrix(iris[:,1:4])
 y = Vector(iris[:,5])
 
-testd = tf.warm_start(1,y,x,1)
-tf.subtree_inputs(testd,x,y)
-#---------------
-lend_full = CSV.read("../lending-club/lend_training_70.csv",DataFrame)
-lend = lend_full[randperm(size(lend_full,1)),:][1:500,:]
-x = Matrix(select(lend,Not(:loan_status)))
-y = Vector(lend[:,:loan_status])
-#split into training and validation sets
-xtrain,xvalid,ytrain,yvalid = splitobs(x,y,0.8)
-#----- Profiling
-# @profile LocalSearch(x,y,1,400,α=0.01)
-# Juno.profiler()
-
 #-------------
+ncores = length(Sys.cpu_info());
+Threads.nthreads()
 
-# T_output = LocalSearch(xtrain,ytrain,10,100,α=0.01)
-function func()
-    LocalSearch(x,y,1,100,α=0.01)
-end
-time = @btime func()
-
-# loss(T,y,0.1)
-# dmax = 8
-# tune(dmax,x,y;nthreads = length(Sys.cpu_info()) -1 )
-#
-# trees = threaded_restarts!(x,y,nrestarts;warmup=400)
-# ncores = length(Sys.cpu_info());
-# Threads.nthreads()
-#
-# #parallelize random restarts
-# nrestarts = 8
-function threaded_restarts!(x::Array{Float64,2},y,nrestarts::Int64;warmup=400)
+#parallelize random restarts
+nrestarts = 8
+function threaded_restarts!(x,y,nrestarts;warmup=400)
     numthreads = Threads.nthreads()-4
     restarts_per_thread = Int(nrestarts/numthreads)
     seed_values = 100:100:100*nrestarts
@@ -60,90 +25,114 @@ function threaded_restarts!(x::Array{Float64,2},y,nrestarts::Int64;warmup=400)
         indices = 1+(i-1)*restarts_per_thread:restarts_per_thread*i
         for j in indices
             seed = seed_values[j]
-            #println(seed)
+            println(seed)
             Tree = LocalSearch(x,y,2,seed)
             output_tree[j] = Tree
         end
     end
     return(output_tree)
 end
+trees = threaded_restarts!(x,y,nrestarts;warmup=400)
 
-function serial_restarts!(x::Array{Float64,2},y,nrestarts::Int64;warmup=400)
 
-    seed_values = 100:100:100*nrestarts
-    output_tree = Dict()
-    #we need to perform the calculations separately on remaining columns when there are remainder columns
-    indices = 1:nrestarts
-    for j in indices
-        seed = seed_values[j]
-        #println(seed)
-        Tree = LocalSearch(x,y,2,seed)
-        output_tree[j] = Tree
+T_output = LocalSearch(x,y,2,400)
+
+function LocalSearch(x,y,tdepth,seed;tol_limit = 1)
+    println("##############################")
+    println("### Local Search Algorithm ###")
+    println("##############################")
+
+    function HalfTreeSearch(T,X,y,tol_limit)
+        tol = 10
+        local iter = 0
+        while tol > tol_limit
+            iter +=1
+            println("------------- Iteration # $iter ----------------")
+            Lprev = loss(T,y)
+            local Lcur
+            local shuffled_t = shuffle(T.nodes)
+            print(shuffled_t)
+            for t in shuffled_t
+                if t ∈ T.nodes
+                    # println("STARTING TREE node $t-- $T")
+                    Tt = tf.create_subtree(t,T)
+                    # println("STARTING node $t-- $Tt")
+                    local indices = tf.subtree_inputs(Tt,X,y)
+                    # println(length(indices))
+                    Ttnew, better_found = optimize_node_parallel(Tt,indices,X,y,T,e)
+                    if better_found ==true
+                        global T_replacement = Ttnew
+                        T = replace_subtree(T,Ttnew,X;print_prog=true)
+                        global output = T
+                        # println("replaced Tree $t-- $T")
+                    end
+                    Lcur = loss(T,y)
+                    tol = abs(Lprev - Lcur)
+                    println("Lprev $Lprev, Lcur $Lcur")
+                end
+            end
+            println("Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
+        end
+        return T
     end
-    return(output_tree)
-end
-
-
-function LocalSearch(x::Array{Float64,2},y::Array{String,1},tdepth::Int,seed::Int;
-    tol_limit = 1e-3,α=0.000001)
-    # println("##############################")
-    # println("### Local Search Algorithm ###")
-    # println("##############################")
 
     # Data pre-processing - Normalisation
     dt = fit(UnitRangeTransform, x, dims=1)
     X = StatsBase.transform(dt,x)
     e = tf.get_e(size(x,2))
     local T = tf.warm_start(tdepth,y,X,seed)
-    test_tree(T)
-    global starting_tree = T
-    starting_loss = loss(T,y,α)
-    tol = 10
-    local iter = 0
-    @inbounds while tol > tol_limit
-        iter +=1
-        println("Iteration # $iter")
-        Lprev = loss(T,y,α)
-        local Lcur
-        local shuffled_t = shuffle(T.nodes)
-        # print(shuffled_t)
-        @inbounds for t in shuffled_t
-            @inbounds if t ∈ T.nodes
-                # println("(node $t)")
-                # println("STARTING TREE node $t-- $T")
-                Tt = tf.create_subtree(t,T)
-                test_tree(Tt)
-                # println("STARTING node $t-- $Tt")
-                local indices = tf.subtree_inputs(Tt,X,y)
-                # println(length(indices))
-                Ttnew, better_found = optimize_node_parallel(Tt,indices,X,y,T,e;α=α)
-                if better_found ==true
-                    T = replace_subtree(T,Ttnew,X;print_prog=false)
-                    # global output = T
-                    # println("replaced Tree $t-- $T")
-                end
-                Lcur = loss(T,y,α)
-                tol = abs(Lprev - Lcur)
-                #println("Lprev $Lprev, Lcur $Lcur")
-            end
+    global previous_tree = T
+    starting_loss = loss(T,y)
+
+    #Break the trees into left and right half: get nodes, subtrees, indices
+    global Tt_L = tf.create_subtree(2,T)
+    local L_indices = tf.subtree_inputs(Tt_L,X,y)
+
+    global Tt_R = tf.create_subtree(3,T)
+    local R_indices = tf.subtree_inputs(Tt_R,X,y)
+    numthreads = Threads.nthreads()-4
+
+    Threads.@threads for i in 1:numthreads
+        if i == 1
+            Tt_L = HalfTreeSearch(Tt_L,X,y,tol_limit)
+        else
+            Tt_R = HalfTreeSearch(Tt_R,X,y,tol_limit)
         end
-        println("Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
     end
-    return T
+    tol = 1e-10
+    T = replace_subtree(T,Tt_R,X;print_prog=true)
+    T = replace_subtree(T,Tt_L,X;print_prog=true)
+    println("FInal output tree $T")
+    global final_tree = T
+    Lcur = loss(T,y)
+    println("Lprev $starting_loss, Lcur $Lcur")
+
+    test_tree(T)
 end
 
-@inline get_level(node::Int,subtree_root::Int) = Int(floor(log2(node/subtree_root)))
-@inline calculate_destination(parent_root::Int,subtree_root::Int,node::Int) =
-    node + (parent_root-subtree_root)*2^(get_level(node,subtree_root))
+function calculate_destination(tree_root,subtree_root, current_node)
+    output_binary = digits(current_node,base=2)
+    # println(output_binary)
+    levelz = length(digits(subtree_root,base = 2)) - length(digits(tree_root,base = 2))
+    # println(length(output_binary),levelz)
+    # println("levels",length(output_binary)-(levelz-1))
+    for i in length(output_binary):-1:length(output_binary)-(levelz-1)
+        output_binary[i] -= 1
+    end
+    # print(check)
+    destination = sum(output_binary.*2 .^(0:(length(output_binary)-1)))
+    return destination
+end
 
-function replace_lower_upper(T_full::tf.Tree,subtree::tf.Tree,X::Array{Float64,2}; print_prog = false)#::Tree,subtree::Tree
+
+function replace_lower_upper(T_full,subtree,X; print_prog = false)#::Tree,subtree::Tree
     local T = tf.copy(T_full)
     if length(subtree.nodes) == 1 #
         kid = minimum(subtree.nodes)
         parent = tf.get_parent(kid)
-        # if print_prog == true
-        #     println("replacement - leaf $kid --> $parent")
-        # end
+        if print_prog == true
+            println("replacement - leaf $kid --> $parent")
+        end
         children = tf.get_children(parent,T)
         delete!(T.a,parent) # removed parent from branch
         delete!(T.b,parent)
@@ -155,7 +144,7 @@ function replace_lower_upper(T_full::tf.Tree,subtree::tf.Tree,X::Array{Float64,2
         filter!(x->x ∉children,T.leaves) # remove kid from leaves
         append!(T.leaves,parent) # add parent to leaves
         points = [k for (k,v) in T.z if v in children]
-        @inbounds for point in points # add assignments of z to parent
+        for point in points # add assignments of z to parent
             T.z[point] = parent
         end
     else
@@ -180,27 +169,26 @@ function replace_lower_upper(T_full::tf.Tree,subtree::tf.Tree,X::Array{Float64,2
         append!(T.leaves, new_leaves)
         # println(T.nodes)
         # test_tree(T)
-        extra_branches = [k for (k,v) in T.b if k ∈ children]
-        filter!(p -> p.first ∉ extra_branches, T.a)
-        filter!(p -> p.first ∉ extra_branches, T.b)
-
-        @inbounds for key in keys(subtree.a)
+        for key in keys(subtree.a)
             T.a[CD(key)] = subtree.a[key]
             T.b[CD(key)] = subtree.b[key]
         end
-
+        # println(T)
         e = tf.get_e(size(X,2))
         T = tf.assign_class(X,T,e)
-        test_tree(T)
     end
     return T
 end
 
-function replace_subtree(T_full::tf.Tree,subtree::tf.Tree,X::Array{Float64,2}; print_prog = false)#::Tree,subtree::Tree
+function replace_subtree(T_full,subtree,X; print_prog = false)#::Tree,subtree::Tree
     local T = tf.copy(T_full)
 
     parent =  minimum(subtree.nodes)
     children = tf.get_children(parent,T)
+    # println(minimum(subtree.nodes))
+    if print_prog == true
+        println("replacement - branch $parent")
+    end
 
     if isnothing(children)==false # must have children on T tree
         filter!(x->x ∉children,T.nodes) # remove kid from nodes
@@ -209,125 +197,55 @@ function replace_subtree(T_full::tf.Tree,subtree::tf.Tree,X::Array{Float64,2}; p
         filter!(p -> p.first ∉ children, T.a)
         filter!(p -> p.first ∉ children, T.b)
     end
+    println("filtered!")
+    # if isnothing(children)== false
+    #     filter!(p -> p.first ∉ children, T.b)
+    #     filter!(p -> p.first ∉ children, T.a)
+    # end
     filter!(x->x ≠parent,T.leaves) # remove parent from branches
     filter!(x->x ≠parent,T.branches) # remove parent from branches
     filter!(x->x ≠parent,T.nodes) # remove parent from branches
+    # println("children $children")
+
 
     append!(T.leaves,subtree.leaves) # add parent to leaves
     append!(T.branches,subtree.branches) # add parent to leaves
     append!(T.nodes,subtree.nodes) # add parent to leaves
-    @inbounds for node in keys(subtree.b)
+    for node in keys(subtree.b)
         T.b[node] = subtree.b[node] # add parent to leaves
         T.a[node] = subtree.a[node] # add parent to leaves
     end
-    @inbounds for point in keys(subtree.z) # add assignments of z to parent
+    for point in keys(subtree.z) # add assignments of z to parent
         T.z[point] = subtree.z[point]
     end
     return(T)
+        # lower = parent *2
+        # upper = parent *2 + 1
+        # if isnothing(children)==false
+        #     filter!(x->x ∉ children,T.nodes) # remove kid from nodes
+        #     filter!(x->x ∉ children,T.branches) # remove kid from branches
+        #     filter!(x->x ∉ children,T.leaves) # remove kid from leaves
+        #     filter!(p -> p.first ∉ children, T.b)
+        #     filter!(p -> p.first ∉ children, T.a)
+        # end
+        #
+
+        # if parent ∉ T.branches
+        #     append!(T.branches,parent)
+        # end
+        # sub_children = tf.get_children(parent,subtree) # subtree children
+        # append!(T.nodes,sub_children)
+        # append!(T.leaves,sub_children)
+        # filter!(x -> x ≠ parent, T.leaves) # incase replacing on leaf
+        # T.a[parent] = subtree.a[parent]
+        # T.b[parent] = subtree.b[parent]
 end
 
-# Γs=rand(Truncated(Normal(0.01,0.01),0,100),n_test)
+# dicttest = Dict(2=>"A",5=>"B")
 
-# ncores=
-# nthreads=Threads.nthreads()-1
-# nthreads
-#Tune hyperparameters
-function tune(dmax,xtrain,ytrain,xvalid,yvalid;nthreads = length(Sys.cpu_info()) -1 )
-    Cp_vals = [0.001, 0.01, 0.1, 1, 10]
-    d_vals = collect(1:dmax)
-    p = size(xvalid,2) #num features
-    e = tf.get_e(p)
-    grid = zeros(length(Cp_vals) * length(d_vals),4)
-    local j=1
-    for v in Cp_vals, u in d_vals
-            grid[j,1] = u
-            grid[j,2] = v
-            j+=1
-    end
-    vars = @view grid[1:end,:]
-    seed =1000
-    Tvalid = Dict()
-    #segment = Int(floor(size(vars,1)/nthreads))
-    #index = [[i*segment for i=0:nthreads-1] ; Int(floor(size(vars,1)))]
-    index_per_thread = Int(floor(size(vars,1)/nthreads))
-    remaining_index = size(vars,1)-index_per_thread*nthreads
-    Threads.@threads for t in 1:nthreads+1
-    @inbounds begin
-            #for i=index[t-1]+1:index[t]
-            for i=t+(t-1)*index_per_thread:index_per_thread*nthreads
-                T = LocalSearch(xtrain,ytrain,Int(vars[i,1]),seed;tol_limit = 1,α=vars[i,2])
-                Tvalid[i]= tf.Tree(deepcopy(T.nodes),deepcopy(T.branches),
-                            deepcopy(T.leaves),deepcopy(T.a),
-                            deepcopy(T.b),deepcopy(Dict()))
-                Tvalid[i] = tf.assign_class(xvalid,Tvalid[i],e;indices = false)
-                vars[i,3] = loss(Tvalid[i],yvalid,vars[i,2])
-                vars[i,4] = Threads.threadid()
-            end
-            if t <= remaining_index
-                i = t+index_per_thread*nthreads
-                T = LocalSearch(xtrain,ytrain,Int(vars[i,1]),seed;tol_limit = 1,α=vars[i,2])
-                Tvalid[i]= tf.Tree(deepcopy(T.nodes),deepcopy(T.branches),
-                            deepcopy(T.leaves),deepcopy(T.a),
-                            deepcopy(T.b),deepcopy(Dict()))
-                Tvalid[i] = tf.assign_class(xvalid,Tvalid[i],e;indices = false)
-                vars[i,3] = loss(Tvalid[i],yvalid,vars[i,2])
-                vars[i,4] = Threads.threadid()
-            end
-        end
-    end
-    println(vars)
-    best = vars[argmin(vars[:,3]),:]
-    # return (best[1],best[2])
-    return vars
-end
 
-# a = rand(3,3)
-#
-# var_check = tune(5,x,y,nthreads=15)
-# [[i,j] for (i,j) in zip([0.001, 0.01,3],[1,3,3])]
 #-----
-# using BenchmarkTools
-# @btime for i =1:1000 tf.y_mat(y)end
-# @btime for i =1:100 loss_better(T,Y,0.01) end
-# @btime for i =1:100 collect(keys(T.z)) end
-# @btime for i =1:100 func() end
-#
-# func() = [k for k in keys(T.z)]
-# loss_better(T,Y,0.01)
-#
-# function preprocess_loss(y,T)
-#     z_keys = collect(keys(T.z)) # ONLY CHECK points in subtree
-#     Y_full = tf.y_mat(y)
-#     Y = Y_full[z_keys,:]
-#     L̂ = _get_baseline(Y_full)
-#     return (Y,L̂)
-# end
-#
-# boo = preprocess_loss(y,T)
-# @btime for i=1:100 loss_better(T,boo[1],0.01,boo[2])end
-# @btime for i =1:100 loss(T,y,0.01) end
-#
-# @profile loss(T,y,0.01)
-# @profile (for i=1:100 loss_better(T,boo[1],0.01,boo[2])end)
-# Juno.profiler()
-#
-#
-# function loss_better(T,Y,α,L̂)
-#     # z_keys = collect(keys(T.z)) # ONLY CHECK points in subtree
-#     # z_keys = collect(keys(T.z)) # ONLY CHECK points in subtree
-#     # Y = Y_full[z_keys,:] # Reorganize Y values to z order
-#     Nkt = [sum((Y[values(T.z) .== t,:]),dims=1) for t ∈ T.leaves]
-#     Nt = length.([[k for (k,v) in T.z if v ==t] for t ∈ T.leaves])
-#     Lt = [Nt[t] - maximum(Nkt[t]) for t=1:length(T.leaves)]
-#     L = sum(Lt)#/L̂ #### + α*Cp......
-#     C = length(T.branches)
-#     # println("L̂ = $L̂,L = $L, C = $(α*C)")
-#     # return (L) #so that it not so small for now
-#     # println(α*C)
-#     return (L/L̂*1 + α*C) #so that it not so small for now
-# end
-
-@inline function loss(T::tf.Tree,y::Array{String,1},α::Float64)
+function loss(T,y;α=0.01)
     Y_full = tf.y_mat(y)
     L̂ = _get_baseline(Y_full)
     z_keys = collect(keys(T.z)) # ONLY CHECK points in subtree
@@ -338,13 +256,14 @@ end
     Lt = [Nt[t] - maximum(Nkt[t]) for t=1:length(T.leaves)]
     L = sum(Lt)#/L̂ #### + α*Cp......
     C = length(T.branches)
-    # println("L̂ = $L̂,L = $L, C = $(α*C)")
+    # println("L = $(L/L̂), C = $(α*C)")
     # return (L) #so that it not so small for now
     return (L/L̂*1 + α*C) #so that it not so small for now
+    # return(L + α*C*L̂)
 end
 
 # TODO Can reduce this as there are no more indices ... tecnically
-@inline function _get_baseline(Y::Array{Float64,2})
+function _get_baseline(Y)
     Nt = sum((Y),dims=1)
     error = size(Y,1) - maximum(Nt)
     return error
@@ -354,8 +273,7 @@ end
 #--- Optimize Node Parallel
 # Input: Subtree T to optimize, training data X,y
 # Output: Subtree T with optimized parallel split at root
-function optimize_node_parallel(Tt::tf.Tree,indices::Array{Int64,1},
-            X::Array{Float64,2},y::Array{String,1},T::tf.Tree,e::Array{Int64,2};α::Float64)
+function optimize_node_parallel(Tt,indices,X,y,T,e)
     Y =tf.y_mat(y)
     XI = X[indices,:]
     YI = Y[indices,:]
@@ -365,20 +283,18 @@ function optimize_node_parallel(Tt::tf.Tree,indices::Array{Int64,1},
 
     better_split_found = false
 
-    error_best = loss(Tt,y,α)
-    #println("(Node $root)")
+    error_best = loss(Tt,y)
+    println("(Node $root)")
     if root in Tt.branches
-        # println("Optimize-Node-Parallel : Branch split")
+        println("Optimize-Node-Parallel : Branch split")
         # println("Tt     $Tt")
         Tnew = tf.create_subtree(root,Tt)
-        #println("Timing Marker 5")
         # println("New tree $Tnew")
         Tlower_sub = tf.create_subtree(tf.left_child(root,Tt),Tt)
         Tupper_sub = tf.create_subtree(tf.right_child(root,Tt),Tt)
-        #println("Timing Marker 4")
     else
-        # println("Optimize-Node-Parallel : Leaf split")
-        Tnew  = new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5,α=α)
+        println("Optimize-Node-Parallel : Leaf split")
+        Tnew  = new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5)
         # println("Tnew",Tnew)
         if Tnew == false
             return (Tt,false)
@@ -386,34 +302,31 @@ function optimize_node_parallel(Tt::tf.Tree,indices::Array{Int64,1},
         Tlower_sub = tf.create_subtree(tf.left_child(root,Tnew),Tnew)
         Tupper_sub = tf.create_subtree(tf.right_child(root,Tnew),Tnew)
     end
-    #println("Timing Marker 1")
     Tlower = replace_lower_upper(Tnew,Tlower_sub,X)
-    #println("Timing Marker 2")
     Tupper = replace_lower_upper(Tnew,Tupper_sub,X)
-    Tpara, error_para = best_parallelsplit(root,XI,YI,Tnew,e,indices,X,y,α=α)
+    Tpara, error_para = best_parallelsplit(root,XI,YI,Tnew,e,indices,X,y)
 
     # println("Para tree $Tpara")
-    error_lower = loss(Tlower,y,α)
-    error_upper = loss(Tupper,y,α)
-    #println("Timing Marker 3")
+    error_lower = loss(Tlower,y)
+    error_upper = loss(Tupper,y)
 
     if error_para < error_best
-        # println("!! Better Split Found : subtree")
-        # println("-->Error : $error_best => $error_para")
+        println("!! Better Split Found : subtree")
+        println("-->Error : $error_best => $error_para")
         Tt,error_best = Tpara,error_para
         better_split_found = true
     end
 
     if error_lower < error_best
-        # println("!! Better Split Found : lower")
-        # println("-->Error : $error_best => $error_lower")
+        println("!! Better Split Found : lower")
+        println("-->Error : $error_best => $error_lower")
         Tt,error_best = Tlower,error_lower
         better_split_found = true
     end
 
     if error_upper < error_best
-        # println("!! Better Split Found : upper")
-        # println("-->Error : $error_best => $error_upper")
+        println("!! Better Split Found : upper")
+        println("-->Error : $error_best => $error_upper")
         Tt,error_best = Tupper,error_upper
         better_split_found = true
 
@@ -421,16 +334,14 @@ function optimize_node_parallel(Tt::tf.Tree,indices::Array{Int64,1},
     return(Tt,better_split_found)
 end
 
-function new_feasiblesplit(root::Int64,XI::Array{Float64,2},YI::Array{Float64,2},
-                Tt::tf.Tree,e::Array{Int64,2},indices::Array{Int,1},X::Array{Float64,2}
-                ;Nmin=5,α::Float64)
+function new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5)
     branches = [root]
     leaves = [2*root,2*root+1]
     nodes = [root,2*root,2*root+1]
     n,p = size(XI)
     Tfeas = tf.Tree(nodes,branches,leaves,Dict(),Dict(),Dict())
 
-    new_values, error_best = _get_split(root,XI,YI,Tfeas,e,indices,X,y;Nmin=5,α=α)
+    new_values, error_best = _get_split(root,XI,YI,Tfeas,e,indices,X,y;Nmin=5)
     # println("newvalues",new_values)
     if new_values == false # no feasible split found
         return false
@@ -445,14 +356,11 @@ function new_feasiblesplit(root::Int64,XI::Array{Float64,2},YI::Array{Float64,2}
     return Tpara
 end
 
-function best_parallelsplit(root::Int64,XI::Array{Float64,2},YI::Array{Float64,2},
-                Tt::tf.Tree,e::Array{Int,2},indices::Array{Int,1},X::Array{Float64,2},
-                y::Array{String,1}
-                ;Nmin=5,α::Float64)
+function best_parallelsplit(root,XI,YI,Tt,e,indices,X,y;Nmin=5)
     #println("test- in parallel split")
-    new_values, error_best = _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α)
+    new_values, error_best = _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5)
     if new_values == false # no feasible split found
-        return (Tt, loss(Tt,y,α))
+        return (Tt, loss(Tt,y))
     else
         Tpara = tf.copy(Tt)
         Tpara.a[root] = Int(new_values[1])
@@ -462,9 +370,7 @@ function best_parallelsplit(root::Int64,XI::Array{Float64,2},YI::Array{Float64,2
     end
 end
 
-function _get_split(root::Int64,XI::Array{Float64,2},YI::Array{Float64,2},
-                Tt::tf.Tree,e::Array{Int64,2},indices::Array{Int,1},X::Array{Float64,2},
-                y::Array{String,1};Nmin=5,α::Float64)
+function _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5)
     n,p = size(XI)
     error_best = Inf
     Tttry = tf.copy(Tt)
@@ -473,17 +379,18 @@ function _get_split(root::Int64,XI::Array{Float64,2},YI::Array{Float64,2},
     # local new_values = [1,0.5]
     # local error_best = loss(Tt,y)
     local new_values, error_best
-    @inbounds for j in 1:p, i in 1:n-1
+    for j in 1:p, i in 1:n-1
         values = sort(XI[:,j])
         bsplit = 0.5*(values[i] + values[i+1])
         Tttry.a[root] = j
         Tttry.b[root] = bsplit
         Tttry = tf.assign_class(X,Tttry,e;indices = indices)
         #create a tree with this new a and b
-        error = loss(Tttry,y,α)
+        error = loss(Tttry,y)
         # println("MIN LEAF SIZE",tf.minleafsize(Tttry))
         if tf.minleafsize(Tttry) >= Nmin && error < error_best && true == true
             # println("MIN LEAF SIZE",tf.minleafsize(Tttry))
+            global testin = Tttry
             error_best = error
             new_values = [j,bsplit]
             # println("newvalues before",new_values,indices)
@@ -492,10 +399,10 @@ function _get_split(root::Int64,XI::Array{Float64,2},YI::Array{Float64,2},
     end
     if better_split_found == true
         # println("newvalues after",new_values)
-        # println("FOUND FEASIBLE TREE")
+        println("FOUND FEASIBLE TREE")
         return(new_values,error_best)
     else
-        #println("NO FEASIBLE TREE")
+        println("NO FEASIBLE TREE")
         return(false,false)
     end
 end
@@ -503,26 +410,6 @@ end
 #---- Testing
 
 using Test
-
-function test_tree(T::tf.Tree)
-    @test T.leaves ⊆ T.nodes
-    @test T.branches ⊆ T.nodes
-    @test vcat(T.leaves,T.branches) ⊆ T.nodes
-    @test T.nodes ⊆ vcat(T.leaves,T.branches)
-    @test unique(values(T.z)) ⊆ T.leaves
-    @test T.leaves ⊆ unique(values(T.z))
-    @test unique(values(T.z)) ⊈ T.branches
-    @test keys(T.b) ⊆ T.branches
-    @test keys(T.a) ⊆ T.branches
-    @test length(T.nodes) == length(unique(T.nodes))
-    @test length(T.leaves) == length(unique(T.leaves))
-    @test length(T.branches) == length(unique(T.branches))
-    if isempty(T.a) == false
-        @test keys(T.a) ⊈ T.leaves
-        @test keys(T.b) ⊈ T.leaves
-    end
-    @test isempty(T.z) == false
-end
 
 @test 1 ==  1
 
@@ -568,6 +455,25 @@ Ttnew,bs = optimize_node_parallel(Tt,indices,x,y,T,tf.get_e(size(x,2)))
 
 test_tree(Ttnew)
 
+function test_tree(T)
+    @test T.leaves ⊆ T.nodes
+    @test T.branches ⊆ T.nodes
+    @test vcat(T.leaves,T.branches) ⊆ T.nodes
+    @test T.nodes ⊆ vcat(T.leaves,T.branches)
+    @test unique(values(T.z)) ⊆ T.leaves
+    @test T.leaves ⊆ unique(values(T.z))
+    @test unique(values(T.z)) ⊈ T.branches
+    @test keys(T.b) ⊆ T.branches
+    @test keys(T.a) ⊆ T.branches
+    @test length(T.nodes) == length(unique(T.nodes))
+    @test length(T.leaves) == length(unique(T.leaves))
+    @test length(T.branches) == length(unique(T.branches))
+    if isempty(T.a) == false
+        @test keys(T.a) ⊈ T.leaves
+        @test keys(T.b) ⊈ T.leaves
+    end
+    @test isempty(T.z) == false
+end
 
 test_tree(T)
 
@@ -598,7 +504,7 @@ Tnew = Tt
 Tbest = Tt
 
 error_best = loss(Tt,y)
-#println("---------$root-----------")
+println("---------$root-----------")
 Tnew  = new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5)
 Tlnew = tf.left_child(root,Tnew)
 Tunew = tf.right_child(root,Tnew)
@@ -650,6 +556,7 @@ T_combined = replace_subtree(T,Ttnew,X)
 
 Thelp = tf.copy(T)
 append!(Thelp.branches ,[1000000000])
+
 
 Tlower_sub
 Tnew.branches
