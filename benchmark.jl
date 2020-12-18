@@ -3,7 +3,7 @@ cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
 # cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
 include("tree.jl")
 include("local_search.jl")
-LocalSearch(x,y,3,400,α=0.01,deep=true,tol_limit=0.1)
+# LocalSearch(x,y,3,400,α=0.01,deep=true,tol_limit=0.1)
 
 include("local_search_z.jl")
 include("local_search_half.jl")
@@ -19,50 +19,56 @@ function splitobs(x,y,pct_train)
     return(xtrain,xvalid,ytrain,yvalid)
 end
 
+#
+# iris_full = CSV.read("iris.csv",DataFrame)
+# iris = iris_full[randperm(size(iris_full,1)),:]
+# x = Matrix(iris[:,1:4])
+# y = Vector(iris[:,5])
+#
+# xtrain,xvalid,ytrain,yvalid=splitobs(x,y,0.8)
 
-iris_full = CSV.read("iris.csv",DataFrame)
-iris = iris_full[randperm(size(iris_full,1)),:]
-x = Matrix(iris[:,1:4])
-y = Vector(iris[:,5])
-
-xtrain,xvalid,ytrain,yvalid=splitobs(x,y,0.8)
-
-#---------------
-lend_full = CSV.read("../lending-club/lend_training_70.csv",DataFrame)
-lend_full = filter!(x->x.loan_status!="late",lend_full)
-lend = lend_full[randperm(size(lend_full,1)),:][1:200,:]
-x = Matrix(select(lend,Not(:loan_status)))
-y = Vector(lend[:,:loan_status])
-
-#testing dataset
-lend = lend_full[randperm(size(lend_full,1)),:][201:243,:]
-xtest = Matrix(select(lend,Not(:loan_status)))
-ytest = Vector(lend[:,:loan_status])
 
 #split into training and validation sets
 #xtrain,xvalid,ytrain,yvalid = splitobs(x,y,0.8)
 #------- Tuning
 #tuned_results = tune(5,xtrain,ytrain,xvalid,yvalid;nthreads = length(Sys.cpu_info()) -8 )
 
-# LocalSearch(x,y,3,400,α=0.01,tol_limit=0.001)
-# LocalSearch_z(x,y,2,400,α=0.01,numthreads=4,tol_limit=0.1)
-# LocalSearch(x,y,3,400,α=0.01,deep=true,tol_limit=0.1)
-# LocalSearch_half(x,y,2,400,α=0.01,numthreads=4,tol_limit=0.1)
 
-#----- JIT COMPILE FIRST
-serial_restarts!(x,y,nrestarts,tdepth,tol_limit = tol_limit,α=α)
-threaded_restarts!(x,y,nrestarts,tdepth,seed_values,n_threads,tol_limit = tol_limit,α=α)
-serial_half!(x,y,nrestarts,tdepth,α=α,tol_limit = tol_limit)
-serial_deep!(x,y,nrestarts,tdepth,α=α,tol_limit = tol_limit)
-serial_z!(x,y,nrestarts,tdepth;α=α,tol_limit = tol_limit,n_threads=n_threads)
+#---------------
+
+lend_full = CSV.read("../lending-club/lend_training_70.csv",DataFrame)
+pct = 0.7
+n_obs = 500
+lend_full = filter!(x->x.loan_status!="late",lend_full)[1:Int(ceil(n_obs/pct)),:]
+# lend = lend_full[randperm(size(lend_full,1)),:][1:200,:]
+x_full = Matrix(select(lend_full,Not(:loan_status)))
+y_full = Vector(lend_full[:,:loan_status])
+x,xtest,y,ytest = splitobs(x_full,y_full,pct)
+#testing dataset
+# lend = lend_full[randperm(size(lend_full,1)),:][201:243,:]
+# xtest = Matrix(select(lend,Not(:loan_status)))
+# ytest = Vector(lend[:,:loan_status])
+
 #----- Model Evaluation
-
-nrestarts = 5
+nrestarts = 50
 tdepth = 4
-n_threads = 2
+n_threads = 10
 tol_limit = 1e-4
 α = 0.001
 seed_values = collect(100:100:100*nrestarts)
+# #----- JIT COMPILE FIRST
+# LocalSearch(x,y,3,400,α=0.01,tol_limit=0.001)
+# LocalSearch_z(x,y,2,400,α=0.01,numthreads=4,tol_limit=0.1)
+# LocalSearch(x,y,3,400,α=0.01,deep=true,tol_limit=0.1)
+# LocalSearch_half(x,y,2,400,α=0.01,n_threads=4,tol_limit=0.1)
+#
+# serial_restarts!(x,y,nrestarts,tdepth,tol_limit = tol_limit,α=α)
+# threaded_restarts!(x,y,nrestarts,tdepth,seed_values,n_threads,tol_limit = tol_limit,α=α)
+# serial_half!(x,y,nrestarts,tdepth,α=α,tol_limit = tol_limit)
+# serial_deep!(x,y,nrestarts,tdepth,α=α,tol_limit = tol_limit)
+# serial_z!(x,y,nrestarts,tdepth;α=α,tol_limit = tol_limit,n_threads=n_threads)
+
+#----- TIMINGSSSS
 
 #serial
 @elapsed T_serial = serial_restarts!(x,y,nrestarts,tdepth,tol_limit = tol_limit,α=α)
@@ -76,16 +82,13 @@ T_threaded_f,threaded_is_accuracy,threaded_os_accuracy = evaluate_tree(T_threade
 @elapsed T_half = serial_half!(x,y,nrestarts,tdepth,α=α,tol_limit = tol_limit)
 T_half_f,half_is_accuracy,half_os_accuracy = evaluate_tree(T_half,x,y,xtest,ytest)
 
-#deep
-serial_deep!(x,y,nrestarts,tdepth,α=α,tol_limit = tol_limit)
-serial_deep!(x,y,10,tdepth,α=α,tol_limit = tol_limit)
+#deep !! REMEMBER TO CHANGE NUM THREAD IN .jl file
+@elapsed T_deep = serial_deep!(x,y,nrestarts,tdepth,α=α,tol_limit = tol_limit)
 T_deep_f,deep_is_accuracy,deep_os_accuracy = evaluate_tree(T_deep,x,y,xtest,ytest)
 
 #z
 @elapsed T_z = serial_z!(x,y,nrestarts,tdepth;α=α,tol_limit = tol_limit,n_threads=n_threads)
 T_z_f,z_is_accuracy,z_os_accuracy = evaluate_tree(T_z,x,y,xtest,ytest)
-
-
 
 
 
