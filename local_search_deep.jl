@@ -1,5 +1,23 @@
-include("tree.jl")
+# include("tree.jl")
 # include("local_search.jl")
+
+
+function serial_deep!(x::Array{Float64,2},y,nrestarts::Int64,tdepth::Int64;α=0.001,tol_limit = 1e-4,warmup=400)
+    seed_values = 100:100:100*nrestarts
+    output_tree = Dict()
+    #we need to perform the calculations separately on remaining columns when there are remainder columns
+    indices = 1:nrestarts
+    for j in indices
+        seed = seed_values[j]
+        #println(seed)
+        Tree = LocalSearch(x,y,tdepth,seed,α=α,deep=true,tol_limit=tol_limit)
+        output_tree[j] = Tree
+    end
+    return(output_tree)
+end
+
+# LocalSearch(x,y,3,400,α=0.01,deep=true,tol_limit=0.1)
+
 function optimize_node_parallel_deep(Tt::tf.Tree,indices::Array{Int64,1},
             X::Array{Float64,2},y::Array{String,1},T::tf.Tree,e::Array{Int64,2},
             α::Float64;n_threads=4)
@@ -7,33 +25,22 @@ function optimize_node_parallel_deep(Tt::tf.Tree,indices::Array{Int64,1},
     XI = X[indices,:]
     YI = Y[indices,:]
     root = minimum(Tt.nodes)
-    # global Tnew = Tt
     Tbest = Tt
 
     better_split_found = false
 
     error_best = loss(Tt,α)
     println("(Node $root)")
-    local subtree_nodes
+    local subtree_nodes,subtrees
     if root in Tt.branches
-        # println("Optimize-Node-Parallel : Branch split")
-        # println("Tt     $Tt")
         global Tnew = tf.create_subtree(root,Tt)
-        # println("New tree $Tnew")
-        global subtrees = Dict()
         subtree_nodes = tf.get_children(root,Tnew)
 
     else
-        # println("Optimize-Node-Parallel : Leaf split")
         Tnew  = new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5,α=α)
-        # println("Tnew",Tnew)
         if Tnew == false
             return (Tt,false)
         end
-
-        subtrees = Dict()
-        subtrees[tf.left_child(root,Tnew)] = tf.create_subtree(tf.left_child(root,Tnew),Tnew)
-        subtrees[tf.left_child(root,Tnew)] = tf.create_subtree(tf.right_child(root,Tnew),Tnew)
         subtree_nodes = tf.get_children(root,Tnew)
     end
 
@@ -47,38 +54,24 @@ function optimize_node_parallel_deep(Tt::tf.Tree,indices::Array{Int64,1},
     end
 
     total_subtrees = length(subtree_nodes)
-    # numthreads = Threads.nthreads()-4
-    # subtrees_per_thread = Int(floor(total_subtrees/numthreads))
-    # nremaining_subtrees = total_subtrees-subtrees_per_thread*numthreads
-    Tdeep = Dict()
     errors = zeros(length(subtree_nodes),2)
     err = @view errors[1:end,:]
-    # global Tbest = Dict()
-    # global error_best = Dict()
-    # println("subtree_nodes",subtree_nodes)
-    n_threads = 4#Threads.nthreads()-4
+    nodes = @view subtree_nodes[1:end,:]
     threads_idx = tf.get_thread_idx(n_threads,subtree_nodes)
-    # println(threads_idx,subtree_nodes)
     @inbounds Threads.@threads for t in 1:n_threads
         if t <= length(subtree_nodes)
             for i=threads_idx[t]+1:threads_idx[t+1]
-                st_node = subtree_nodes[i]
-                # println("count",st_node)
-                subtrees[st_node] = tf.create_subtree(st_node,Tnew)
-                # test_tree(subtrees[st_node])
-                Tdeep[st_node] = replace_lower_upper(Tnew,subtrees[st_node],X)
-                # test_tree(Tdeep[st_node])
-                err[i,1] = st_node
-                err[i,2] = loss(Tdeep[st_node],α)
+                err[i,1] = i
+                err[i,2] = loss(replace_lower_upper(Tnew, tf.create_subtree(nodes[i],Tnew),X),α)
             end
         end
     end
+    println("AFTER THREADING",subtree_nodes)
 
     error_new = minimum(errors[:,2])
     new_key = [errors[i,1] for i=1:size(errors,1) if errors[i,2] == error_new][1]
-    new_tree = Tdeep[Int(new_key)]
     if error_new < error_best
-        # println(Tbest)
+        new_tree = replace_lower_upper(Tnew, tf.create_subtree(nodes[Int(new_key)],Tnew),X)
         Tt,error_best = new_tree,error_new
         better_split_found = true
     end

@@ -8,7 +8,21 @@ include("local_search.jl")
 
 loss(T,α) = loss(T,Y,α)
 
-function LocalSearch_half(x,y,tdepth,seed;α=0.01,tol_limit = 1,numthreads=4)
+function serial_half!(x::Array{Float64,2},y,nrestarts::Int64,tdepth::Int64;α=0.001,tol_limit = 1e-4,warmup=400)
+    seed_values = 100:100:100*nrestarts
+    output_tree = Dict()
+    #we need to perform the calculations separately on remaining columns when there are remainder columns
+    indices = 1:nrestarts
+    for j in indices
+        seed = seed_values[j]
+        #println(seed)
+        Tree = LocalSearch_half(x,y,tdepth,seed,α=α,tol_limit = tol_limit)
+        output_tree[j] = Tree
+    end
+    return(output_tree)
+end
+
+function LocalSearch_half(x,y,tdepth,seed;α=0.01,tol_limit = 1,n_threads=2)
     global Y =tf.y_mat(y)
 
     function HalfTreeSearch(T,X,y,tol_limit)
@@ -19,6 +33,7 @@ function LocalSearch_half(x,y,tdepth,seed;α=0.01,tol_limit = 1,numthreads=4)
             # println("------------- Iteration # $iter ----------------")
             Lprev = loss(T,α)
             local Lcur
+
             local shuffled_t = shuffle(T.nodes)
             # print(shuffled_t)
             @inbounds for t in shuffled_t
@@ -30,9 +45,9 @@ function LocalSearch_half(x,y,tdepth,seed;α=0.01,tol_limit = 1,numthreads=4)
                     # println(length(indices))
                     Ttnew, better_found = optimize_node_parallel(Tt,indices,X,y,T,e,α=α)
                     if better_found ==true
-                        global T_replacement = Ttnew
+                        # global T_replacement = Ttnew
                         T = replace_subtree(T,Ttnew,X;print_prog=true)
-                        global output = T
+                        # global output = T
                         # println("replaced Tree $t-- $T")
                     end
                     Lcur = loss(T,α)
@@ -40,7 +55,7 @@ function LocalSearch_half(x,y,tdepth,seed;α=0.01,tol_limit = 1,numthreads=4)
                     # println("Lprev $Lprev, Lcur $Lcur")
                 end
             end
-            println("$iter) Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
+            #println("$iter) Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
         end
         return T
     end
@@ -60,7 +75,7 @@ function LocalSearch_half(x,y,tdepth,seed;α=0.01,tol_limit = 1,numthreads=4)
     global Tt_R = tf.create_subtree(3,T)
     local R_indices = tf.subtree_inputs(Tt_R,X,y)
     # numthreads = Threads.nthreads()-4
-    Threads.@threads for i in 1:numthreads
+    Threads.@threads for i in 1:n_threads
         if i == 1
             Tt_L = HalfTreeSearch(Tt_L,X,y,tol_limit)
         else
@@ -68,12 +83,12 @@ function LocalSearch_half(x,y,tdepth,seed;α=0.01,tol_limit = 1,numthreads=4)
         end
     end
     tol = 1e-10
-    T = replace_subtree(T,Tt_R,X;print_prog=true)
-    T = replace_subtree(T,Tt_L,X;print_prog=true)
+    T = replace_subtree(T,Tt_R,X;print_prog=false)
+    T = replace_subtree(T,Tt_L,X;print_prog=false)
     # println("FInal output tree $T")
-    global final_tree = T
+    # global final_tree = T
     Lcur = loss(T,α)
-    println("Lprev $starting_loss, Lcur $Lcur")
+    #println("Lprev $starting_loss, Lcur $Lcur")
     return T
 
 end

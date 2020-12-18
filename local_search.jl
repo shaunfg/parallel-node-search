@@ -7,7 +7,7 @@ include("local_search_deep.jl")
 # cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
 # include("tree.jl")
 
-function splitobs(x,y,pct_train)
+function splitobs(x::Array{Float64,2},y::Array{String,1},pct_train::Float64)
     xtrain = x[1:Int(floor(pct_train*size(x)[1])),:]
     xvalid = x[Int(floor(pct_train*size(x)[1]))+1:end,:]
     ytrain = y[1:Int(floor(pct_train*size(x)[1]))]
@@ -16,41 +16,38 @@ function splitobs(x,y,pct_train)
 end
 
 
-function threaded_restarts!(x::Array{Float64,2},y,nrestarts::Int64;warmup=400)
-    numthreads = Threads.nthreads()-4
-    restarts_per_thread = Int(nrestarts/numthreads)
-    seed_values = 100:100:100*nrestarts
-    output_tree = Dict()
-    #we need to perform the calculations separately on remaining columns when there are remainder columns
-    Threads.@threads for i in 1:numthreads
-        indices = 1+(i-1)*restarts_per_thread:restarts_per_thread*i
-        for j in indices
-            seed = seed_values[j]
-            #println(seed)
-            Tree = LocalSearch(x,y,2,seed)
-            output_tree[j] = Tree
+function threaded_restarts!(x::Array{Float64,2},y::Array{String,1},
+    nrestarts::Int64,tdepth::Int64,seed_values::Vector{Int64},
+    n_threads::Int;tol_limit = 1e-3,α=0.001,warmup=400)
+    #seed_values = 100:100:100*nrestarts
+    threads_idx = tf.get_thread_idx(n_threads,seed_values)
+    output_tree =  Dict()
+    @inbounds Threads.@threads for t in 1:n_threads
+        if t <= length(threads_idx)
+            for i in threads_idx[t]+1:threads_idx[t+1]
+                output_tree[i] = LocalSearch(x,y,tdepth,seed_values[i],tol_limit=tol_limit,α=α)
+            end
         end
     end
     return(output_tree)
 end
 
-function serial_restarts!(x::Array{Float64,2},y,nrestarts::Int64;warmup=400)
-
+function serial_restarts!(x::Array{Float64,2},y::Array{String,1},nrestarts::Int64,
+    tdepth::Int64;tol_limit = 1e-3,α=0.001,warmup=400)
     seed_values = 100:100:100*nrestarts
     output_tree = Dict()
     #we need to perform the calculations separately on remaining columns when there are remainder columns
     indices = 1:nrestarts
-    for j in indices
+    @inbounds for j in indices
         seed = seed_values[j]
         #println(seed)
-        Tree = LocalSearch(x,y,2,seed)
-        output_tree[j] = Tree
+        output_tree[j] = LocalSearch(x,y,tdepth,seed,tol_limit=tol_limit,α=α)
     end
     return(output_tree)
 end
 
 function LocalSearch(x::Array{Float64,2},y::Array{String,1},tdepth::Int,seed::Int;
-    tol_limit = 1e-3,α=0.000001,deep =false)
+    tol_limit = 1e-3,α=0.001,deep =false)
     # println("##############################")
     # println("### Local Search Algorithm ###")
     # println("##############################")
@@ -98,7 +95,7 @@ function LocalSearch(x::Array{Float64,2},y::Array{String,1},tdepth::Int,seed::In
                 #println("Lprev $Lprev, Lcur $Lcur")
             end
         end
-        println("$iter)Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
+        #println("$iter)Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
     end
     return T
 end
@@ -238,7 +235,7 @@ function tune(dmax,xtrain,ytrain,xvalid,yvalid;nthreads = length(Sys.cpu_info())
             end
         end
     end
-    println(vars)
+    #println(vars)
     best = vars[argmin(vars[:,3]),:]
     # return (best[1],best[2])
     return vars

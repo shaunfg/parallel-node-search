@@ -4,6 +4,20 @@
 
 
 
+function serial_z!(x::Array{Float64,2},y,nrestarts::Int64,tdepth::Int64;α=0.001,tol_limit = 1e-4,warmup=400,n_threads=10)
+    seed_values = 100:100:100*nrestarts
+    output_tree = Dict()
+    #we need to perform the calculations separately on remaining columns when there are remainder columns
+    indices = 1:nrestarts
+    for j in indices
+        seed = seed_values[j]
+        #println(seed)
+        Tree = LocalSearch_z(x,y,tdepth,seed,α=α,tol_limit = tol_limit,numthreads=n_threads)
+        output_tree[j] = Tree
+    end
+    return(output_tree)
+end
+
 loss(T,α) = loss(T,Y,α)
 
 # include("unit_test.jl")
