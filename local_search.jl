@@ -91,16 +91,10 @@ function LocalSearch(x,y,tdepth,seed;tol_limit = 1,α=0.01)
     return T
 end
 
-function calculate_destination(tree_root,subtree_root, current_node)
-    output_binary = digits(current_node,base=2)
-    levelz = length(digits(subtree_root,base = 2)) - length(digits(tree_root,base = 2))
-    for i in length(output_binary):-1:length(output_binary)-(levelz-1)
-        output_binary[i] -= 1
-    end
-    destination = sum(output_binary.*2 .^(0:(length(output_binary)-1)))
-    return destination
-end
-
+get_level(node,subtree_root) = Int(floor(log2(node/subtree_root)))
+# get_level(50,12)
+calculate_destination(parent_root,subtree_root,node) = node + (parent_root-subtree_root)*2^(get_level(node,subtree_root))
+# calculate_destination(51,3,12)
 
 function replace_lower_upper(T_full,subtree,X; print_prog = false)#::Tree,subtree::Tree
     local T = tf.copy(T_full)
@@ -146,13 +140,15 @@ function replace_lower_upper(T_full,subtree,X; print_prog = false)#::Tree,subtre
         append!(T.leaves, new_leaves)
         # println(T.nodes)
         # test_tree(T)
+        extra_branches = [k for (k,v) in T.b if k ∈ children]
+        filter!(p -> p.first ∉ extra_branches, T.a)
+        filter!(p -> p.first ∉ extra_branches, T.b)
+
         for key in keys(subtree.a)
             T.a[CD(key)] = subtree.a[key]
             T.b[CD(key)] = subtree.b[key]
         end
-        filter!(p -> p.first ∉ T.leaves, T.a)
-        filter!(p -> p.first ∉ T.leaves, T.b)
-        # println(T)
+
         e = tf.get_e(size(X,2))
         T = tf.assign_class(X,T,e)
     end
