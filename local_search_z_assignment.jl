@@ -1,6 +1,6 @@
 using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
-cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
-# cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
+# cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
+cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
 include("tree.jl")
 
 
@@ -15,21 +15,26 @@ lend = lend_full[randperm(size(lend_full,1)),:][1:500,:]
 x = Matrix(select(lend,Not(:loan_status)))
 y = Vector(lend[:,:loan_status])
 #----- Profiling
-using Profile
-@profile LocalSearch(x,y,2,400,α=0.001)
-Juno.profiler()
+# using Profile
+# @profile LocalSearch(x,y,2,400,α=0.001)
+# Juno.profiler()
 
 #-------------
-T_output = LocalSearch(x,y,1,400,α=0.0001)
+@elapsed T_output = LocalSearch(x,y,3,400,α=0.0001,numthreads=5)
+@elapsed T_output = LocalSearch(x,y,3,400,α=0.01,numthreads=1)
 
-trees = threaded_restarts!(x,y,nrestarts;warmup=400)
-ncores = length(Sys.cpu_info());
-Threads.nthreads()
+
+# range(0,stop=50,length=10)
+
+# get_thread_idx(3, x)
+# trees = threaded_restarts!(x,y,nrestarts;warmup=400)
+# ncores = length(Sys.cpu_info());
+# Threads.nthreads()
 
 #parallelize random restarts
-nrestarts = 8
-function threaded_restarts!(x,y,nrestarts;warmup=400)
-    numthreads = Threads.nthreads()-4
+# nrestarts = 8
+function threaded_restarts!(x,y,nrestarts;warmup=400,numthreads=4)
+    # numthreads = Threads.nthreads()-4
     restarts_per_thread = Int(nrestarts/numthreads)
     seed_values = 100:100:100*nrestarts
     output_tree = Dict()
@@ -46,8 +51,7 @@ function threaded_restarts!(x,y,nrestarts;warmup=400)
     return(output_tree)
 end
 
-
-function LocalSearch(x,y,tdepth,seed;tol_limit = 1,α=0.01)
+function LocalSearch(x,y,tdepth,seed;tol_limit = 1,α=0.01,numthreads=1)
     println("##############################")
     println("### Local Search Algorithm ###")
     println("##############################")
@@ -75,7 +79,7 @@ function LocalSearch(x,y,tdepth,seed;tol_limit = 1,α=0.01)
                 # println("STARTING node $t-- $Tt")
                 local indices = tf.subtree_inputs(Tt,X,y)
                 # println(length(indices))
-                Ttnew, better_found = optimize_node_parallel(Tt,indices,X,y,T,e;α=α)
+                Ttnew, better_found = optimize_node_parallel(Tt,indices,X,y,T,e;α=α,numthreads=numthreads)
                 if better_found ==true
                     T = replace_subtree(T,Ttnew,X;print_prog=true)
                     # global output = T
@@ -96,7 +100,7 @@ get_level(node,subtree_root) = Int(floor(log2(node/subtree_root)))
 calculate_destination(parent_root,subtree_root,node) = node + (parent_root-subtree_root)*2^(get_level(node,subtree_root))
 # calculate_destination(51,3,12)
 
-function replace_lower_upper(T_full,subtree,X; print_prog = false)#::Tree,subtree::Tree
+function replace_lower_upper(T_full,subtree,X; print_prog = false,numthreads)#::Tree,subtree::Tree
     local T = tf.copy(T_full)
     if length(subtree.nodes) == 1 #
         kid = minimum(subtree.nodes)
@@ -150,7 +154,7 @@ function replace_lower_upper(T_full,subtree,X; print_prog = false)#::Tree,subtre
         end
 
         e = tf.get_e(size(X,2))
-        T = tf.assign_class(X,T,e)
+        T = tf.assign_class(X,T,e,numthreads)
     end
     return T
 end
@@ -254,10 +258,13 @@ function _get_baseline(Y)
 end
 
 
+
+# tf._cascade_down_parallel(1,X,1,starting_tree,e)
+# assign_class(X,starting_tree,e,1)
 #--- Optimize Node Parallel
 # Input: Subtree T to optimize, training data X,y
 # Output: Subtree T with optimized parallel split at root
-function optimize_node_parallel(Tt,indices,X,y,T,e;α)
+function optimize_node_parallel(Tt,indices,X,y,T,e;α,numthreads)
     Y =tf.y_mat(y)
     XI = X[indices,:]
     YI = Y[indices,:]
@@ -280,7 +287,7 @@ function optimize_node_parallel(Tt,indices,X,y,T,e;α)
         println("Timing Marker 4")
     else
         println("Optimize-Node-Parallel : Leaf split")
-        Tnew  = new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5,α=α)
+        Tnew  = new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5,α=α,numthreads=numthreads)
         # println("Tnew",Tnew)
         if Tnew == false
             return (Tt,false)
@@ -289,15 +296,16 @@ function optimize_node_parallel(Tt,indices,X,y,T,e;α)
         Tupper_sub = tf.create_subtree(tf.right_child(root,Tnew),Tnew)
     end
     println("Timing Marker 1")
-    Tlower = replace_lower_upper(Tnew,Tlower_sub,X)
+    Tlower = replace_lower_upper(Tnew,Tlower_sub,X,numthreads=numthreads)
+    Tupper = replace_lower_upper(Tnew,Tupper_sub,X,numthreads=numthreads)
     println("Timing Marker 2")
-    Tupper = replace_lower_upper(Tnew,Tupper_sub,X)
-    Tpara, error_para = best_parallelsplit(root,XI,YI,Tnew,e,indices,X,y,α=α)
+    Tpara, error_para = best_parallelsplit(root,XI,YI,Tnew,e,indices,X,y,α=α,numthreads=numthreads)
+    println("Timing Marker 3")
 
     # println("Para tree $Tpara")
     error_lower = loss(Tlower,y,α)
     error_upper = loss(Tupper,y,α)
-    println("Timing Marker 3")
+    println("Timing Marker 9")
 
     if error_para < error_best
         println("!! Better Split Found : subtree")
@@ -323,14 +331,14 @@ function optimize_node_parallel(Tt,indices,X,y,T,e;α)
     return(Tt,better_split_found)
 end
 
-function new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5,α)
+function new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5,α,numthreads)
     branches = [root]
     leaves = [2*root,2*root+1]
     nodes = [root,2*root,2*root+1]
     n,p = size(XI)
     Tfeas = tf.Tree(nodes,branches,leaves,Dict(),Dict(),Dict())
 
-    new_values, error_best = _get_split(root,XI,YI,Tfeas,e,indices,X,y;Nmin=5,α=α)
+    new_values, error_best = _get_split(root,XI,YI,Tfeas,e,indices,X,y;Nmin=5,α=α,numthreads=numthreads)
     # println("newvalues",new_values)
     if new_values == false # no feasible split found
         return false
@@ -340,14 +348,14 @@ function new_feasiblesplit(root,XI,YI,Tt,e,indices,X;Nmin=5,α)
         Tpara.b[root] = new_values[2]
         filter!(x->x≠root, Tpara.leaves)
         # println("TFEASIBLE $Tpara",indices)
-        Tpara = tf.assign_class(X,Tpara,e;indices = indices)
+        Tpara = tf.assign_class(X,Tpara,e,numthreads;indices = indices)
     end
     return Tpara
 end
 
-function best_parallelsplit(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α)
+function best_parallelsplit(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α,numthreads)
     #println("test- in parallel split")
-    new_values, error_best = _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α)
+    new_values, error_best = _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α,numthreads)
     if new_values == false # no feasible split found
         return (Tt, loss(Tt,y,α))
     else
@@ -359,7 +367,7 @@ function best_parallelsplit(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α)
     end
 end
 
-function _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α)
+function _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α,numthreads)
     n,p = size(XI)
     error_best = Inf
     Tttry = tf.copy(Tt)
@@ -373,7 +381,7 @@ function _get_split(root,XI,YI,Tt,e,indices,X,y;Nmin=5,α)
         bsplit = 0.5*(values[i] + values[i+1])
         Tttry.a[root] = j
         Tttry.b[root] = bsplit
-        Tttry = tf.assign_class(X,Tttry,e;indices = indices)
+        Tttry = tf.assign_class(X,Tttry,e,numthreads;indices = indices)
         #create a tree with this new a and b
         error = loss(Tttry,y,α)
         # println("MIN LEAF SIZE",tf.minleafsize(Tttry))
