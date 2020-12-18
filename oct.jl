@@ -63,7 +63,7 @@ end
 
 tree = tf.get_OCT(2)
 
-model = Model(Gurobi.Optimizer)
+model = Model(Gurobi.Optimizer(),Threads=2)
 
 @variable(model,z[1:n,tree.leaves],Bin)
 @variable(model,l[tree.leaves],Bin)

@@ -105,51 +105,7 @@ module tf
         return t
     end
 
-<<<<<<< HEAD
-    function get_thread_idx(num_threads, observations)
-        if num_threads < size(observations,1)
-            subtrees_per_thread = Int(floor(size(observations,1)/num_threads))
-            indices = [subtrees_per_thread*t for t =1:num_threads]
-            if mod(size(observations,1),num_threads) != 0
-                n_remaining = size(observations,1) - subtrees_per_thread*num_threads
-                indices_expand  = collect(1:n_remaining)
-                filled_list = fill(indices_expand[end], num_threads- n_remaining)
-                delta = [indices_expand;filled_list]
-                output = [0;indices .+ delta]
-            else
-                output = [0;indices]
-            end
-            return output
-        elseif num_threads >= size(observations,1)
-            return [0;collect(1:size(observations,1))]
-        end
-    end
-
-    function assign_class(X,T,e;indices = false)
-    ```
-    Assign all z values based on a and b branching values
-    Inputs - Any tree with branching constraints
-    Outputs - Tree with zs filled.
-    ```
-    println("assign CALSS SERIAL")
-    if indices == false
-        N = 1:size(X,1)
-    else
-        N = indices
-    end
-    #for each observation, find leaf and assign class
-    for i in N
-        # node = 1
-        node = minimum(T.nodes)
-        _cascade_down(node,X,i,T,e)
-    end
-    return T
-end
-
-    function assign_class(X,T,e,numthreads;indices = false)
-=======
     function assign_class(X::Array{Float64,2},T::Tree,e::Array{Int64,2};indices = false)
->>>>>>> fa8f576780f544d388989e0a3323cb09fa843e47
         ```
         Assign all z values based on a and b branching values
 
@@ -161,50 +117,13 @@ end
         else
             N = indices
         end
-        # println("ASSIGN CLASS PARALLALE")
-
-        node = minimum(T.nodes)
-        veccc = Int.([1:size(X,1) zeros(size(X,1))])
-        vars = @view veccc[1:end,:]
-        idx = tf.get_thread_idx(numthreads, X)
-        Threads.@threads for thread in 1:numthreads
-            @inbounds begin
-                if thread <= size(X,1)
-                    for i in vars[:,1][1+idx[thread]:idx[thread+1]]
-                        # println("thread$thread")
-                        vars[i,2] = _cascade_down_parallel(node,X,i,T,e)
-                    end
-                end
-            end
+        #for each observation, find leaf and assign class
+        for i in N
+            # node = 1
+            node = minimum(T.nodes)
+            _cascade_down(node,X,i,T,e)
         end
-
-        output_z = Dict()
-        for (k,v) in zip(veccc[:,1],veccc[:,2])
-            output_z[k] = v
-        end
-
-        output_T = tf.Tree(T.nodes,T.branches,T.leaves,T.a,T.b,output_z)
-
-
-        return output_T
-    end
-
-    function _cascade_down_parallel(node::Int,X,i::Int,T,e)
-        #cascade observation down the split
-        if node in T.leaves
-            return node
-        else
-            j = T.a[node]
-            if isempty(j)
-                _cascade_down_parallel(tf.right_child(node,T),X,i,T,e)
-            else
-                if (e[:,j[1]]'*X[i,:] < T.b[node])
-                    _cascade_down_parallel(tf.left_child(node,T),X,i,T,e)
-                else
-                    _cascade_down_parallel(tf.right_child(node,T),X,i,T,e)
-                end
-            end
-        end
+        return T
     end
 
     function _cascade_down(node::Int,X,i::Int,T::Tree,e::Array{Int64,2})
@@ -214,12 +133,12 @@ end
         else
             j = T.a[node]
             if isempty(j)
-                _cascade_down(right_child(node,T),X,i,T,e)
+                tf._cascade_down(tf.right_child(node,T),X,i,T,e)
             else
                 if (e[:,j[1]]'*X[i,:] < T.b[node])
-                    _cascade_down(left_child(node,T),X,i,T,e)
+                    tf._cascade_down(tf.left_child(node,T),X,i,T,e)
                 else
-                    _cascade_down(right_child(node,T),X,i,T,e)
+                    tf._cascade_down(tf.right_child(node,T),X,i,T,e)
                 end
             end
         end
@@ -348,4 +267,82 @@ end
         return(obs)#,x[obs,:],Y[obs,:])
     end
 
+    function _cascade_down_parallel(node::Int,X::Array{Float64,2},i::Int,
+                        T::Tree,e::Array{Int64,2})
+        #cascade observation down the split
+        if node in T.leaves
+            return node
+        else
+            j = T.a[node]
+            if isempty(j)
+                _cascade_down_parallel(tf.right_child(node,T),X,i,T,e)
+            else
+                if (e[:,j[1]]'*X[i,:] < T.b[node])
+                    _cascade_down_parallel(tf.left_child(node,T),X,i,T,e)
+                else
+                    _cascade_down_parallel(tf.right_child(node,T),X,i,T,e)
+                end
+            end
+        end
+    end
+
+    function assign_class(X::Array{Float64,2},T::Tree,e::Array{Int64,2},
+        numthreads::Int64;indices = false)
+        ```
+        Assign all z values based on a and b branching values
+
+        Inputs - Any tree with branching constraints
+        Outputs - Tree with zs filled.
+        ```
+        @inbounds if indices == false
+            N = 1:size(X,1)
+        else
+            N = indices
+        end
+        # println("ASSIGN CLASS PARALLALE")
+
+        node = minimum(T.nodes)
+        veccc = Int.([1:size(X,1) zeros(size(X,1))])
+        vars = @view veccc[1:end,:]
+        idx = get_thread_idx(numthreads, X)
+        Threads.@threads for thread in 1:numthreads
+            @inbounds begin
+                if thread <= size(X,1)
+                    for i in vars[:,1][1+idx[thread]:idx[thread+1]]
+                        vars[i,2] = _cascade_down_parallel(node,X,i,T,e)
+                    end
+                end
+            end
+        end
+
+        output_z = Dict()
+        @inbounds for (k,v) in zip(veccc[:,1],veccc[:,2])
+            output_z[k] = v
+        end
+
+        output_T = tf.Tree(T.nodes,T.branches,T.leaves,T.a,T.b,output_z)
+        # test_tree(output_T)
+        return output_T
+    end
+
+    function get_thread_idx(num_threads::Int64, observations)
+    if num_threads < size(observations,1)
+        subtrees_per_thread = Int(floor(size(observations,1)/num_threads))
+        indices = [subtrees_per_thread*t for t =1:num_threads]
+        if mod(size(observations,1),num_threads) != 0
+            n_remaining = size(observations,1) - subtrees_per_thread*num_threads
+            indices_expand  = collect(1:n_remaining)
+            filled_list = fill(indices_expand[end], num_threads- n_remaining)
+            delta = [indices_expand;filled_list]
+            output = [0;indices .+ delta]
+        else
+            output = [0;indices]
+        end
+        return output
+    elseif num_threads >= size(observations,1)
+        return [0;collect(1:size(observations,1))]
+    end
+
+
+end
 end
