@@ -1,4 +1,5 @@
 using CSV, DataFrames, Random, LinearAlgebra, Distributions, StatsBase
+using Profile, BenchmarkTools
 cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
 # cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
 include("tree.jl")
@@ -28,7 +29,6 @@ y = Vector(lend[:,:loan_status])
 #split into training and validation sets
 xtrain,xvalid,ytrain,yvalid = splitobs(x,y,0.8)
 #----- Profiling
-using Profile, BenchmarkTools
 # @profile LocalSearch(x,y,1,400,α=0.01)
 # Juno.profiler()
 
@@ -39,18 +39,7 @@ function func()
     LocalSearch(x,y,1,100,α=0.01)
 end
 time = @btime func()
-# @btime T_output = LocalSearch(x,y,1,100,α=0.01)
-# loss(T_output,y,0.01)
-# #T_output = LocalSearch(x,y,10,200,α=0.00001)
-# dt = fit(UnitRangeTransform, x, dims=1)
-# X = StatsBase.transform(dt,x)
-# # X = X[:,!Nan]
-# e = tf.get_e(size(x,2))
-# T = tf.warm_start(10,y,X,100)
-#
-# Y_full = tf.y_mat(y)
-# L̂ = _get_baseline(Y_full)
-#
+
 # loss(T,y,0.1)
 # dmax = 8
 # tune(dmax,x,y;nthreads = length(Sys.cpu_info()) -1 )
