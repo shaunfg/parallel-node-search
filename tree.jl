@@ -4,16 +4,15 @@ an object to supplement the optimal classification tree.
 """
 module tf
     struct Tree
-        nodes
-        branches
-        leaves
-        a
-        b
-        z
+        nodes::Array{Int,1}
+        branches::Array{Int,1}
+        leaves::Array{Int,1}
+        a::Dict
+        b::Dict
+        z::Dict
     end
 
-    using Random, DecisionTree, LinearAlgebra#, CategoricalArrays
-    # import MLJBase.int
+    using Random, DecisionTree, LinearAlgebra
 
     get_e(p) = 1*Matrix(I,p,p)
     N_nodes(D::Int) = 2^(D+1) - 1
