@@ -4,23 +4,22 @@ an object to supplement the optimal classification tree.
 """
 module tf
     struct Tree
-        nodes
-        branches
-        leaves
-        a
-        b
-        z
+        nodes::Array{Int64,1}
+        branches::Array{Int64,1}
+        leaves::Array{Int64,1}
+        a::Dict{Int64,Int64}
+        b::Dict{Int64,Float64}
+        z::Dict{Int64,Int64}
     end
 
-    using Random, DecisionTree, LinearAlgebra#, CategoricalArrays
-    # import MLJBase.int
+    using Random, DecisionTree, LinearAlgebra
 
-    get_e(p) = 1*Matrix(I,p,p)
-    N_nodes(D::Int) = 2^(D+1) - 1
-    N_branch(D::Int) = Int(floor(N_nodes(D::Int)/2))
-    get_parent(node) = Int(floor(node/2))
+    @inline get_e(p::Int) = 1*Matrix(I,p,p)
+    @inline N_nodes(D::Int) = 2^(D+1) - 1
+    @inline N_branch(D::Int) = Int(floor(N_nodes(D::Int)/2))
+    @inline get_parent(node::Int) = Int(floor(node/2))
 
-    function warm_start(depth::Int,y,x,seed; rf_ntrees = 1)
+    function warm_start(depth::Int,y::Array{String,1},x::Array{Float64,2},seed::Int; rf_ntrees = 1)
         ```
         Obtain warm start for a local search tree
 
@@ -43,7 +42,7 @@ module tf
         return T
     end
 
-    function get_OCT(depth::Int)
+    @inline function get_OCT(depth::Int)
         nodes = collect(1:N_nodes(depth))
         branches = collect(1:N_branch(depth))
         leaves = collect(N_branch(depth)+1:N_nodes(depth))
@@ -51,7 +50,7 @@ module tf
     end
 
 
-    function get_children(node::Int,T)
+    function get_children(node::Int,T::Tree)
         ```
         Get children of current node, calls recursive function to get all kids
 
@@ -60,7 +59,7 @@ module tf
         T - tree
         ```
         kids = _recurse_children(node::Int,T)
-        if length(kids) == 1
+        @inbounds if length(kids) == 1
             return
         else
             return kids
@@ -68,13 +67,13 @@ module tf
     end
 
 
-    function _recurse_children(node::Int,T)
+    function _recurse_children(node::Int,T::Tree)
         ```
         Recursive function to obtain tree until leaves are reached
         ```
         #cascade observation down the split
         kids = []
-        if node in T.branches
+        @inbounds if node in T.branches
             append!(kids,left_child(node::Int,T))
             append!(kids,_recurse_children(left_child(node::Int,T),T))
             append!(kids,right_child(node::Int,T))
@@ -85,7 +84,7 @@ module tf
         return(unique(kids)) # TODO FIX LATER
     end
 
-    function _branch_constraint(obj,node,t,e)
+    function _branch_constraint(obj,node::Int,t::Tree,e::Array{Int64,2})
         ```
         Branching constraint used only on the warm start.
 
@@ -94,7 +93,7 @@ module tf
         e - identity matrix
         ```
         append!(t.nodes,node)
-        if typeof(obj) != Leaf{String} #if the node is a branch get the branching constraints
+        @inbounds if typeof(obj) != Leaf{String} #if the node is a branch get the branching constraints
             t.a[node] = obj.featid
             t.b[node] = obj.featval
             append!(t.branches,node)
@@ -106,6 +105,7 @@ module tf
         return t
     end
 
+<<<<<<< HEAD
     function get_thread_idx(num_threads, observations)
         if num_threads < size(observations,1)
             subtrees_per_thread = Int(floor(size(observations,1)/num_threads))
@@ -147,13 +147,16 @@ module tf
 end
 
     function assign_class(X,T,e,numthreads;indices = false)
+=======
+    function assign_class(X::Array{Float64,2},T::Tree,e::Array{Int64,2};indices = false)
+>>>>>>> fa8f576780f544d388989e0a3323cb09fa843e47
         ```
         Assign all z values based on a and b branching values
 
         Inputs - Any tree with branching constraints
         Outputs - Tree with zs filled.
         ```
-        if indices == false
+        @inbounds if indices == false
             N = 1:size(X,1)
         else
             N = indices
@@ -204,9 +207,9 @@ end
         end
     end
 
-    function _cascade_down(node::Int,X,i::Int,T,e)
+    function _cascade_down(node::Int,X,i::Int,T::Tree,e::Array{Int64,2})
         #cascade observation down the split
-        if node in T.leaves
+        @inbounds if node in T.leaves
             T.z[i] = node
         else
             j = T.a[node]
@@ -224,26 +227,26 @@ end
     end
 
 
-    function left_child(node,T)#::Int,T::Tree)
+    @inline function left_child(node::Int,T::Tree)#::Int,T::Tree)
         #returns left child node if exists in current tree
-        if 2*node in T.nodes
+        @inbounds if 2*node in T.nodes
             return(2*node)
         end
     end
 
-    function right_child(node,T)#::Int,T::Tree)
+    @inline function right_child(node::Int,T::Tree)#::Int,T::Tree)
         #returns right child node if exists in current tree
-        if 2*node+1 in T.nodes
+        @inbounds if 2*node+1 in T.nodes
             return(2*node+1)
         end
     end
 
-    function minleafsize(T)
+    @inline function minleafsize(T::Tree)
         # Get minimmum leaf size across all leaves in the tree
         minbucket = Inf
         Nt = zeros(maximum(T.nodes))
         z_mat = zeros(maximum([k for (k,v) in T.z]),maximum(T.nodes))
-        for t in T.leaves
+        @inbounds for t in T.leaves
             i = [k for (k,v) in T.z if v==t]
             z_mat[i,t] .= 1
             Nt[t] = sum(z_mat[:,t])
@@ -251,13 +254,14 @@ end
                 minbucket = Nt[t]
             end
         end
+
         return(minbucket)
     end
 
-    function R(node::Int)
+    @inline function R(node::Int)
         # Get Right ancestors
         right_ancestors = []
-        if node==1
+        @inbounds if node==1
             return()
         elseif (node-1)/2==get_parent(node)
             append!(right_ancestors,get_parent(node))
@@ -268,10 +272,10 @@ end
         return(right_ancestors)
     end
 
-    function L(node::Int)
+    @inline function L(node::Int)
         # Get left ancestors
         left_ancestors = []
-        if node==1
+        @inbounds if node==1
             return()
         elseif node/2==get_parent(node)
             append!(left_ancestors,get_parent(node))
@@ -282,7 +286,7 @@ end
         return(left_ancestors)
     end
 
-    function copy(Told)
+    function copy(Told::Tree)
         # Deep copy of a tree
         Tnew = Tree(deepcopy(Told.nodes),deepcopy(Told.branches),
                     deepcopy(Told.leaves),deepcopy(Told.a),
@@ -290,11 +294,11 @@ end
         return Tnew
     end
 
-    function _nodes_subtree(node,t)#::Int,t::Tree)
+    @inline function _nodes_subtree(node::Int,t::Tree)#::Int,t::Tree)
         # Get Subtree of a specified node
         subtree_nodes = []
         subtree_leaves = []
-        if node in t.leaves
+        @inbounds if node in t.leaves
             append!(subtree_nodes,node)
             append!(subtree_leaves,node)
         else
@@ -305,7 +309,7 @@ end
         return(subtree_nodes)
     end
 
-    function create_subtree(node,t)#,t::Tree)
+    function create_subtree(node::Int,t::Tree)#,t::Tree)
         ```
         Return a subtree for a tree that has the node on the branch
         ```
@@ -314,31 +318,31 @@ end
         leaves = t.leaves[(in(nodes).(t.leaves))]
         branches = nodes[(.!(in(leaves).(nodes)))]
         # println("branches", branches)
-        bs = Dict(key => t.b[key] for key in branches)
-        as = Dict(key => t.a[key] for key in branches)
-        zs = Dict(k => t.z[k] for (k,v) in t.z if v in leaves)
+        @inbounds bs = Dict(key => t.b[key] for key in branches)
+        @inbounds as = Dict(key => t.a[key] for key in branches)
+        @inbounds zs = Dict(k => t.z[k] for (k,v) in t.z if v in leaves)
         return Tree(nodes,branches,leaves,as,bs,zs)
     end
 
 
-    function y_mat(y)
+    @inline function y_mat(y::Array{String,1})
         ```
         Get y matrix as a matrix of categorical
         ```
         y2 = deepcopy(y)
         Y = zeros(length(y2),length(unique(y2)))
-        for (i,x) in enumerate(unique(y2))
+        @inbounds for (i,x) in enumerate(unique(y2))
             Y[:,i] = (y.==x)*1
         end
         return Y
     end
 
 
-    function subtree_inputs(Tt,x,y)
+    @inline function subtree_inputs(Tt::Tree,x::Array{Float64,2},y::Array{String,1})
         #returns a list of indices of observations contained in leaf nodes of subtree
         Y = y_mat(y)
-        obs = []
-        for leaf in Tt.leaves
+        obs = Vector{Int64}()
+        @inbounds for leaf in Tt.leaves
             append!(obs,[k for (k,v) in Tt.z if v==leaf])
         end
         return(obs)#,x[obs,:],Y[obs,:])
