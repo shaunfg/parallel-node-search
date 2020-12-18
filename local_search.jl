@@ -20,7 +20,7 @@ using Profile
 Juno.profiler()
 
 #-------------
-T_output = LocalSearch(x,y,2,400,α=0.01)
+T_output = LocalSearch(x,y,1,400,α=0.0001)
 
 trees = threaded_restarts!(x,y,nrestarts;warmup=400)
 ncores = length(Sys.cpu_info());
