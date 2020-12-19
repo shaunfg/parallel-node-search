@@ -25,3 +25,5 @@ Open `benchmark.jl` to find all functions used to test and benchmark different l
 - `unit_test.jl` - Contains function `test_tree` to verify Tree struct output from Local Search
 - `testing OCT.ipynb` - Contains IntepretableAI Optimal Classification Tree structure, used as reference
 - `onethread_oct.ipynb` - Contains MIO OCT function used to test on one thread only (Gurobi Default != 1) 
+
+Source: [Dimitris  Bertsimas,  Jack  Dunn.Machine  Learning  under  a  ModernOptimization Lens. Dynamic Ideas LLC, Massachusetts, 2019]
