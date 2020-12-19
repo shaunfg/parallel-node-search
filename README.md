@@ -1,4 +1,4 @@
-# Parallel Node Search on Optimal Classification Trees
+# Parallel Local Search on Optimal Classification Trees
 (Shaun Fendi Gan, Arkira Tanglertsumpun, MIT MBAn Dec 2020)
 
 The local-search heuristic was introduced as an attempt to remedy the limitations on the scalability of Bertsimas and Dunn's Optimal Classification Tree mixed-integer optimization formulation. This repo examined the effectiveness of this heuristic as well as introducing four parallelized versions that could improve model efficiency. 
