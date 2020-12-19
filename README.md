@@ -20,3 +20,5 @@ The local-search heuristic was introduced as an attempt to remedy the limitation
 - `model_evaluation.jl` - Contains function for calculating accuracy of a tree's predictions
 - `benchmark.jl` - Contains code used to benchmark performance of different Local Search Functions 
 - `unit_test.jl` - Contains function `test_tree` to verify Tree struct output from Local Search
+- `testing OCT.ipynb` - Contains IntepretableAI Optimal Classification Tree structure, used as reference
+- `onethread_oct.ipynb` - Contains MIO OCT function used to test on one thread only (Gurobi Default != 1) 
