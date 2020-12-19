@@ -5,8 +5,8 @@ The local-search heuristic was introduced as an attempt to remedy the limitation
 
 ## Key Results
 * The Half-Split method was found to be the most scalable and time efficient, reducing run time by 30%. 
-* Standard Multi-threading on random restarts did not have a significant improvement (<5%), whereas class assignments and 
-* Deep Subtree Search were found to only benefit on datasets with many features (m > 15).
+* Standard Multi-threading on random restarts did not have a significant improvement (<5%),
+* Deep Subtree Search Class Assignments were found to only benefit on datasets with many features (m > 15).
   
 ## How to Use
 Open `benchmark.jl` to find all functions used to test and benchmark different local search. Original local search can be found as the function `LocalSearch` in `local_search.jl` The MIO formulation implement in JuMP/ Gurobi can also be found in `oct.jl`
