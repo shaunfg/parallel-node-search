@@ -1,4 +1,4 @@
-using Profile, BenchmarkTools
+using Profile, BenchmarkTools, DecisionTree
 cd("C:/Users/Shaun Gan/Desktop/parallel-node-search/")
 # cd("/Users/arkiratanglertsumpun/Documents/GitHub/parallel-node-search")
 include("tree.jl")
@@ -19,13 +19,18 @@ function splitobs(x,y,pct_train)
     return(xtrain,xvalid,ytrain,yvalid)
 end
 
-#
-# iris_full = CSV.read("iris.csv",DataFrame)
-# iris = iris_full[randperm(size(iris_full,1)),:]
-# x = Matrix(iris[:,1:4])
-# y = Vector(iris[:,5])
-#
-# xtrain,xvalid,ytrain,yvalid=splitobs(x,y,0.8)
+
+pct = 0.7
+n_obs = 500
+iris_full = CSV.read("iris.csv",DataFrame)
+iris = iris_full[randperm(size(iris_full,1)),:]
+# iris = iris[1:Int(ceil(n_obs/pct)),:]
+x_full = Matrix(iris[:,1:4])
+y_full = Vector(iris[:,5])
+x,xtest,y,ytest = splitobs(x_full,y_full,pct)
+
+#xtrain,xvalid,ytrain,yvalid=splitobs(x,y,0.8)
+
 
 
 #split into training and validation sets
@@ -38,7 +43,7 @@ end
 
 lend_full = CSV.read("../lending-club/lend_training_70.csv",DataFrame)
 pct = 0.7
-n_obs = 500
+n_obs = 150
 lend_full = filter!(x->x.loan_status!="late",lend_full)[1:Int(ceil(n_obs/pct)),:]
 # lend = lend_full[randperm(size(lend_full,1)),:][1:200,:]
 x_full = Matrix(select(lend_full,Not(:loan_status)))
@@ -50,11 +55,11 @@ x,xtest,y,ytest = splitobs(x_full,y_full,pct)
 # ytest = Vector(lend[:,:loan_status])
 
 #----- Model Evaluation
-nrestarts = 50
-tdepth = 4
+nrestarts = 20
+tdepth = 5
 n_threads = 10
 tol_limit = 1e-4
-α = 0.001
+α = 0.1
 seed_values = collect(100:100:100*nrestarts)
 # #----- JIT COMPILE FIRST
 # LocalSearch(x,y,3,400,α=0.01,tol_limit=0.001)
@@ -69,6 +74,13 @@ seed_values = collect(100:100:100*nrestarts)
 # serial_z!(x,y,nrestarts,tdepth;α=α,tol_limit = tol_limit,n_threads=n_threads)
 
 #----- TIMINGSSSS
+#
+# p = size(x)[2]
+# seed = 100
+# rf_ntrees = 500
+# rf = build_forest(y,x,floor(Int,sqrt(p)),rf_ntrees,0.7,tdepth,5,2,rng = seed)
+# ypred = apply_forest(rf,xtest)
+# acc = sum(ypred.==ytest)/length(ytest)
 
 #serial
 @elapsed T_serial = serial_restarts!(x,y,nrestarts,tdepth,tol_limit = tol_limit,α=α)

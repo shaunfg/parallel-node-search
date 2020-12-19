@@ -21,7 +21,6 @@ function serial_half!(x::Array{Float64,2},y,nrestarts::Int64,tdepth::Int64;α=0.
     end
     return(output_tree)
 end
-
 function LocalSearch_half(x,y,tdepth,seed;α=0.01,tol_limit = 1,n_threads=2)
     global Y =tf.y_mat(y)
 

@@ -72,7 +72,7 @@ function LocalSearch_z(x::Array{Float64,2},y::Array{String,1},tdepth::Int,seed::
                 # println("Lprev $Lprev, Lcur $Lcur")
             end
         end
-        println("$iter)Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
+        # println("$iter)Tolerance = $tol, Error = $Lcur, starting error = $starting_loss")
     end
     return T
 end

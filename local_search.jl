@@ -22,9 +22,14 @@ function threaded_restarts!(x::Array{Float64,2},y::Array{String,1},
     #seed_values = 100:100:100*nrestarts
     threads_idx = tf.get_thread_idx(n_threads,seed_values)
     output_tree =  Dict()
+    # output_tree = Vector{tf.Tree}(undef,length(seed_values))
+    # v = @view output_tree[1:end,:]
+    # seed = @view seed_values[1:end,:]
+    # println(threads_idx)
     @inbounds Threads.@threads for t in 1:n_threads
-        if t <= length(threads_idx)
-            for i in threads_idx[t]+1:threads_idx[t+1]
+        if t < length(threads_idx)
+            for i = threads_idx[t]+1:threads_idx[t+1]
+                # v[i] = LocalSearch(x,y,tdepth,seed[i],tol_limit=tol_limit,α=α)
                 output_tree[i] = LocalSearch(x,y,tdepth,seed_values[i],tol_limit=tol_limit,α=α)
             end
         end

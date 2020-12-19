@@ -20,7 +20,7 @@ end
 
 function optimize_node_parallel_deep(Tt::tf.Tree,indices::Array{Int64,1},
             X::Array{Float64,2},y::Array{String,1},T::tf.Tree,e::Array{Int64,2},
-            α::Float64;n_threads=4)
+            α::Float64;n_threads=10)
     Y =tf.y_mat(y)
     XI = X[indices,:]
     YI = Y[indices,:]
@@ -30,7 +30,7 @@ function optimize_node_parallel_deep(Tt::tf.Tree,indices::Array{Int64,1},
     better_split_found = false
 
     error_best = loss(Tt,α)
-    println("(Node $root)")
+    # println("(Node $root)")
     local subtree_nodes,subtrees
     if root in Tt.branches
         global Tnew = tf.create_subtree(root,Tt)
@@ -48,7 +48,7 @@ function optimize_node_parallel_deep(Tt::tf.Tree,indices::Array{Int64,1},
 
     if error_para < error_best
         # println("!! Better Split Found : subtree")
-        println("-->Error : $error_best => $error_para")
+        # println("-->Error : $error_best => $error_para")
         Tt,error_best = Tpara,error_para
         better_split_found = true
     end
@@ -66,7 +66,7 @@ function optimize_node_parallel_deep(Tt::tf.Tree,indices::Array{Int64,1},
             end
         end
     end
-    println("AFTER THREADING",subtree_nodes)
+    # println("AFTER THREADING",subtree_nodes)
 
     error_new = minimum(errors[:,2])
     new_key = [errors[i,1] for i=1:size(errors,1) if errors[i,2] == error_new][1]
