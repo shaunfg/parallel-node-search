@@ -1,7 +1,7 @@
 # Parallel Local Search on Optimal Classification Trees
 (Shaun Fendi Gan, Arkira Tanglertsumpun, MIT MBAn Dec 2020)
 
-The local-search heuristic was introduced as an attempt to remedy the limitations on the scalability of Bertsimas and Dunn's Optimal Classification Tree mixed-integer optimization formulation. This repo examined the effectiveness of this heuristic as well as introducing four parallelized versions that could improve model efficiency. 
+The local-search heuristic was introduced as an attempt to remedy the limitations on the scalability of Bertsimas and Dunn's Optimal Classification Tree mixed-integer optimization formulation. This repo examined the effectiveness of this heuristic as well as introducing four parallelized versions that could improve heuristic optimality. 
 
 ## Key Results
 * The Half-Split method was found to be the most scalable and time efficient, reducing run time by 30%. 
@@ -25,5 +25,10 @@ Open `benchmark.jl` to find all functions used to test and benchmark different l
 - `unit_test.jl` - Contains function `test_tree` to verify Tree struct output from Local Search
 - `testing OCT.ipynb` - Contains IntepretableAI Optimal Classification Tree structure, used as reference
 - `onethread_oct.ipynb` - Contains MIO OCT function used to test on one thread only (Gurobi Default != 1) 
+
+## Report
+|<a href="https://github.com/shaunfg/parallel-node-search/blob/main/Final_Report.pdf"><img src="https://github.com/shaunfg/parallel-node-search/blob/main/tree-thumbnail.png" alt="Illustration" width="220px"/></a>|
+|:--:|
+|Full Report|
 
 Source: [Dimitris  Bertsimas,  Jack  Dunn.Machine  Learning  under  a  ModernOptimization Lens. Dynamic Ideas LLC, Massachusetts, 2019]
