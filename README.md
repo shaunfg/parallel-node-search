@@ -26,9 +26,10 @@ Open `benchmark.jl` to find all functions used to test and benchmark different l
 - `testing OCT.ipynb` - Contains IntepretableAI Optimal Classification Tree structure, used as reference
 - `onethread_oct.ipynb` - Contains MIO OCT function used to test on one thread only (Gurobi Default != 1) 
 
+Source: [Dimitris  Bertsimas,  Jack  Dunn.Machine  Learning  under  a  ModernOptimization Lens. Dynamic Ideas LLC, Massachusetts, 2019]
+
 ## Report
 |<a href="https://github.com/shaunfg/parallel-node-search/blob/main/Final_Report.pdf"><img src="https://github.com/shaunfg/parallel-node-search/blob/main/tree-thumbnail.png" alt="Illustration" width="220px"/></a>|
 |:--:|
 |Full Report|
 
-Source: [Dimitris  Bertsimas,  Jack  Dunn.Machine  Learning  under  a  ModernOptimization Lens. Dynamic Ideas LLC, Massachusetts, 2019]
